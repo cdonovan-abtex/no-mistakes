@@ -7,6 +7,9 @@
 # (commands.test) and docs/src/content/docs/reference/pipeline-steps.md (Test).
 # Lint and format stay explicit so those gates stay deterministic.
 
+# Pipeline validation is explicitly pinned to the approved Codex GPT agent.
+agent: codex
+
 commands:
   lint: "make lint"
   format: "gofmt -w ."
