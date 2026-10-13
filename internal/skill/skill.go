@@ -142,6 +142,11 @@ that a reviewer reading only the diff would not know.
 
 When full acceptance intent must stay private, supply an independently authored,
 committed JSON public title/body with ` + "`--public-description <repo-relative-path>`" + `.
+For an existing pre-push parked run on a compatible daemon, use ` + "`no-mistakes axi public-description --file <final-public.json>`" + `
+to capture independent committable material once, without editing application source,
+changing full intent, resolving its gate, replacing its driver or starting a new run.
+Continue through the existing owner's ordinary gate response. Never restart a shared
+daemon or cancel/recreate validation to activate this capability.
 Keep the complete private intent in the intent input; do not substitute the public
 summary for it. All validation stays on. The forge boundary publishes only that
 pinned description and source-bound machine validation facts, not intent-derived

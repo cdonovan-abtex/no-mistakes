@@ -207,7 +207,7 @@ Immediately before **every** pipeline `CreatePR`/`UpdatePR` body write (normal, 
 
 Findings, fix summaries, review answers, test commands, captions, logs and raw artifacts may contain or paraphrase private intent: they remain local and are neither embedded, uploaded as media, nor pushed to the evidence branch in this mode. This is a positive source boundary, not a private-text scanner or a prompt instruction. Configured `pr.template`, `pr.title_format` and `pr.appendix` cannot replace the pinned final public material; existing author narrative is replaced by the supplied description, not preserved or republished. Attestation-only refreshes remain body-only writes.
 
-Reattach without the flag, or with the same pinned path; a different path or adding a description to an existing ordinary run is refused. `rerun` inherits the path and reads its committed blob at the new submitted head (missing or invalid source fails closed). A fresh run without this flag retains ordinary publication behavior. File/stdin transports and `--no-publish-intent` alone do **not** establish this boundary: intent-derived generated evidence can still be public in ordinary runs.
+Reattach without the flag, or with the same pinned path; a different path or adding a description through the launch flag to an existing ordinary run is refused. An existing pre-push parked run can instead adopt independent committable material once with [`axi public-description`](#no-mistakes-axi-public-description), without changing its intent or restarting it. `rerun` inherits a committed pin's path and reads its blob at the new submitted head (missing or invalid source fails closed); a captured description is inherited unchanged and bound to the new submitted head. A fresh run without either boundary retains ordinary publication behavior. File/stdin transports and `--no-publish-intent` alone do **not** establish this boundary: intent-derived generated evidence can still be public in ordinary runs.
 
 The CLI refuses an older daemon before pushing. Use compatible current binaries for the CLI, gate notification hook and daemon; never downgrade a daemon serving separated runs. Upgrading shared services must be coordinated by their owner, not by an in-flight validation driver. This protects generated PR bodies, not source diffs, public-description files themselves, agent-authored commit messages, or publication outside no-mistakes; keep private material out of those surfaces too.
 
@@ -368,6 +368,22 @@ The answer that closes the last open question sets the run moving again, so it t
 Every answered question is recorded per branch, so a later cold reviewer receives it as settled and does not re-raise it, and the question and answer appear in the PR body's review conversation.
 
 Answering requires an active run, because only its executor can resume the reviewer.
+
+## no-mistakes axi public-description
+
+Capture a final public description for the current repository/branch's **same existing active run**, while its pre-push gate remains parked:
+
+```bash
+no-mistakes axi public-description --file /path/to/final-public.json
+```
+
+The file uses the same bounded JSON `{title, body}` format as [`axi run --public-description`](#independent-public-description). It is independently authored **committable public material**, not private acceptance intent. It need not be committed into the application: the command reads it once, sends its bytes (not its local path), and pins the complete raw JSON, SHA-256 and existing submitted source SHA in the run record. Each forge emission verifies this capture. Later edits/deletion of the caller's file cannot change the pin.
+
+This operation takes no `--run`, no intent, no gate action and no model selection. It changes only an empty publication pin. It does **not** edit application source, create a replacement run, resume/approve the gate, revalidate completed steps, change custody or replace the existing owner's driver. Continue through that owner's normal `axi respond` path afterwards. The unchanged private intent and real validation records continue to drive the same logical run.
+
+Only an actually parked gate before Push is eligible, and only before a published head, associated PR, or encountered publication step. A racing gate response, another active run/submitted head, or replacement/removal of an existing pin is refused; an identical capture may be retried while still eligible. This is not a repair for an already exposed body. The same normal/fallback/generated-evidence/pre-push/CI emission boundary applies to an adopted pin, including after recovery.
+
+A distinct RPC refuses old daemons instead of silently dropping an unsupported field. The command cannot activate new code in an old running daemon; compatible runtime activation remains the owning operator's responsibility. Never cancel/recreate an active validation run or restart a shared daemon merely to make this operation available.
 
 ## no-mistakes axi status
 

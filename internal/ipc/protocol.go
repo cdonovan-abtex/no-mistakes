@@ -19,6 +19,7 @@ const (
 	MethodResolvePiProfile          = "resolve_pi_profile"
 	MethodProbeOmitIntent           = "probe_omit_intent"
 	MethodProbePublicDescription    = "probe_public_description"
+	MethodAdoptPublicDescription    = "adopt_public_description"
 	MethodReleaseVerificationPlan   = "release_verification_plan"
 	MethodCaptureVerificationPlan   = "capture_verification_plan"
 	MethodStartFreshRun             = "start_fresh_run"
@@ -148,6 +149,16 @@ type ReleaseVerificationPlanParams struct {
 
 // ProbePublicDescriptionParams checks both the daemon and the registered
 // gate's notification contract before private intent can enter a new launch.
+// AdoptPublicDescriptionParams tightens only the publication boundary of the
+// caller branch's exact existing parked run. It carries no validation intent.
+type AdoptPublicDescriptionParams struct {
+	RepoID           string          `json:"repo_id"`
+	Branch           string          `json:"branch"`
+	RunID            string          `json:"run_id"`
+	SubmittedHeadSHA string          `json:"submitted_head_sha"`
+	Description      json.RawMessage `json:"description"`
+}
+
 type ProbePublicDescriptionParams struct {
 	RepoID string `json:"repo_id"`
 }

@@ -1196,7 +1196,11 @@ func (m *RunManager) HandleRerun(ctx context.Context, repoID, branch, previousRu
 	// the launch flag. Re-read the committed source at the new submitted head;
 	// absence or corruption fails rather than falling back to intent prose.
 	if publicdescription.RequestPath(ctx) == "" && selectedRun.PublicDescription != nil {
-		ctx = publicdescription.WithRequest(ctx, selectedRun.PublicDescription.Path)
+		if selectedRun.PublicDescription.RawJSON != "" {
+			ctx = publicdescription.WithCapturedRequest(ctx, selectedRun.PublicDescription.RawJSON)
+		} else {
+			ctx = publicdescription.WithRequest(ctx, selectedRun.PublicDescription.Path)
+		}
 	}
 	closingIssues = append(append([]string(nil), selectedRun.ClosingIssueRefs...), closingIssues...)
 	return m.startRunWithIntentSource(ctx, repo, branch, headSHA, baseSHA, "rerun", skipSteps, intent, intentSource, storedPRBaseBranch, selectedRun.OmitIntent || omitIntent, inheritablePRURL(selectedRun), planID, closingIssues, profiles...)
@@ -1454,6 +1458,9 @@ func (m *RunManager) startRunWithIntentSourceLocked(ctx context.Context, repo *d
 	}
 
 	public, err := publicdescription.Read(ctx, m.paths.RepoDir(repo.ID), headSHA, publicdescription.RequestPath(ctx))
+	if raw := publicdescription.CapturedRequest(ctx); raw != "" {
+		public, err = publicdescription.Capture([]byte(raw), headSHA)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -2008,6 +2015,18 @@ func telemetryFailedStepName(database *db.DB, runID string) string {
 		}
 	}
 	return ""
+}
+
+// HandleAdoptPublicDescription routes a boundary-only capture to the existing
+// executor. It neither launches nor resumes a run.
+func (m *RunManager) HandleAdoptPublicDescription(p *ipc.AdoptPublicDescriptionParams) error {
+	m.mu.Lock()
+	exec := m.executors[p.RunID]
+	m.mu.Unlock()
+	if exec == nil {
+		return fmt.Errorf("no active executor for run %s", p.RunID)
+	}
+	return exec.AdoptPublicDescription(p.RunID, p.RepoID, p.Branch, p.SubmittedHeadSHA, p.Description)
 }
 
 // HandleRespond routes a user approval action to the executor for the given run.

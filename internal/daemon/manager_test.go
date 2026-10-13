@@ -18,6 +18,7 @@ import (
 	"github.com/kunchenguid/no-mistakes/internal/ipc"
 	"github.com/kunchenguid/no-mistakes/internal/paths"
 	"github.com/kunchenguid/no-mistakes/internal/pipeline"
+	"github.com/kunchenguid/no-mistakes/internal/publicdescription"
 	"github.com/kunchenguid/no-mistakes/internal/scm"
 	"github.com/kunchenguid/no-mistakes/internal/telemetry"
 	"github.com/kunchenguid/no-mistakes/internal/types"
@@ -812,7 +813,7 @@ func TestRerunSkipStepsConfiguresExecutor(t *testing.T) {
 	}
 }
 
-func TestRerunInheritsIntentAndClosingIssuesFromSelectedRun(t *testing.T) {
+func TestRerunInheritsIntentClosingIssuesAndPublicDescriptionFromSelectedRun(t *testing.T) {
 	step := &mockPassStep{name: types.StepReview}
 	p, d := startTestDaemonWithSteps(t, func() []pipeline.Step {
 		return []pipeline.Step{step}
@@ -836,6 +837,15 @@ func TestRerunInheritsIntentAndClosingIssuesFromSelectedRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitForRunTerminalState(t, d, first.RunID)
+	// Seed the prior durable capture; the gate-side adoption operation itself
+	// is exercised with a real existing executor in the emission smoke.
+	publicPin, err := publicdescription.Capture([]byte(`{"title":"public","body":"Independent public material"}`), headSHA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.PinRunPublicDescription(first.RunID, publicPin); err != nil {
+		t.Fatal(err)
+	}
 	selectedIntent := "  selected exact requirements\n"
 	if err := d.UpdateRunIntent(first.RunID, db.RunIntent{Summary: selectedIntent, Source: db.RunIntentSourceAgent, Score: 1}); err != nil {
 		t.Fatal(err)
@@ -871,6 +881,9 @@ func TestRerunInheritsIntentAndClosingIssuesFromSelectedRun(t *testing.T) {
 	}
 	if got.IntentSource == nil || *got.IntentSource != db.RunIntentSourceRerun {
 		t.Fatalf("intent source = %v, want %q", got.IntentSource, db.RunIntentSourceRerun)
+	}
+	if got.PublicDescription == nil || *got.PublicDescription != *publicPin || !got.OmitIntent {
+		t.Fatalf("rerun dropped captured publication boundary: %+v", got.PublicDescription)
 	}
 	if refs := strings.Join(got.ClosingIssueRefs, ","); refs != "42,owner/repo#9" {
 		t.Fatalf("closing issue references = %q, want inherited set", refs)

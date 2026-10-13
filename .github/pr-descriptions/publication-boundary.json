@@ -1,4 +1,4 @@
 {
   "title": "fix(pr): separate public descriptions from validation intent",
-  "body": "## What Changed\n\n- Accept a committed final public description independently from the complete validation intent.\n- Enforce the source boundary before PR creation and updates, including fallback, generated evidence, template updates, and attestation refreshes.\n- Keep full validation enabled and publish source-bound machine evidence without intent-derived prose or raw artifacts."
+  "body": "## What Changed\n\n- Accept a committed final public description independently from the complete validation intent.\n- Support one-time independent description adoption on the same pre-push parked run without replacing its validation intent or driver.\n- Enforce the source boundary before PR creation and updates, including fallback, generated evidence, template updates, and attestation refreshes.\n- Keep full validation enabled and publish source-bound machine evidence without intent-derived prose or raw artifacts."
 }

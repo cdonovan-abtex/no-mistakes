@@ -7,7 +7,6 @@ import (
 
 	"github.com/kunchenguid/no-mistakes/internal/db"
 	"github.com/kunchenguid/no-mistakes/internal/pipeline"
-	"github.com/kunchenguid/no-mistakes/internal/publicdescription"
 	"github.com/kunchenguid/no-mistakes/internal/scm"
 )
 
@@ -74,18 +73,15 @@ func preparePRPublication(sctx *pipeline.StepContext, proposed scm.PRContent, he
 		return proposed, nil
 	}
 	pin := sctx.Run.PublicDescription
-	source, err := publicdescription.Read(sctx.Ctx, sctx.WorkDir, pin.HeadSHA, pin.Path)
-	if err != nil {
+	if err := pin.Verify(sctx.Ctx, sctx.WorkDir); err != nil {
 		return scm.PRContent{}, err
 	}
-	if source == nil || *source != *pin {
-		return scm.PRContent{}, fmt.Errorf("public description source differs from the run pin; refusing publication")
-	}
+	source := pin
 	evidence, err := publicValidationRecord(sctx, head)
 	if err != nil {
 		return scm.PRContent{}, err
 	}
-	evidence += fmt.Sprintf("\n\nPublic description source: `%s`, SHA-256 `%s`.", pin.HeadSHA, pin.SHA256)
+	evidence += fmt.Sprintf("\n\nPublic description binding: `%s`, SHA-256 `%s`.", pin.HeadSHA, pin.SHA256)
 	evidence = appendIssuesSection(evidence, issuesSection(sctx, source.Body))
 	content, err := composeOwnedPRContent(prOwnedBody{before: source.Body}, source.Title, evidence, bodyLimit)
 	if err != nil {
