@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kunchenguid/no-mistakes/internal/config"
 	"github.com/kunchenguid/no-mistakes/internal/pipeline"
 	"github.com/kunchenguid/no-mistakes/internal/scm"
 )
@@ -207,7 +208,8 @@ func TestPROwnershipRestampPreservesAuthorsAndConsumerContract(t *testing.T) {
 	}
 	newHead := strings.Repeat("ab", 20)
 	host := &attestationTestHost{body: content.Body, title: "Author's title"}
-	if err := restampPRAttestation(context.Background(), host, &scm.PR{Number: "42"}, newHead, nil); err != nil {
+	sctx := newTestContextWithDBRecords(t, nil, t.TempDir(), testPipelineHeadSHA, testPipelineHeadSHA, config.Commands{})
+	if err := restampPRAttestationWithSteps(sctx, host, &scm.PR{Number: "42"}, newHead, nil); err != nil {
 		t.Fatal(err)
 	}
 	rebound, err := parsePROwnedBody(host.body)
@@ -222,7 +224,7 @@ func TestPROwnershipRestampPreservesAuthorsAndConsumerContract(t *testing.T) {
 	}
 	host.body = strings.Replace(host.body, "Low recorded risk.", "Human note inside evidence", 1)
 	host.updates = 0
-	if err := restampPRAttestation(context.Background(), host, &scm.PR{Number: "42"}, testPipelineHeadSHA, nil); err == nil || host.updates != 0 {
+	if err := restampPRAttestationWithSteps(sctx, host, &scm.PR{Number: "42"}, testPipelineHeadSHA, nil); err == nil || host.updates != 0 {
 		t.Fatalf("edited evidence overwritten during restamp: err=%v, writes=%d", err, host.updates)
 	}
 }

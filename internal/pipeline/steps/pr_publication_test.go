@@ -130,7 +130,7 @@ func TestPublicDescriptionForgeBoundary(t *testing.T) {
 					t.Fatal(reason)
 				}
 				newHead := strings.Repeat("ab", 20)
-				err = restampPRAttestationWithSteps(sctx.Ctx, host, &scm.PR{Number: "99", URL: existing}, newHead, nil, sctx.Log, attestationPolicyFrom(sctx), sctx)
+				err = restampPRAttestationWithSteps(sctx, host, &scm.PR{Number: "99", URL: existing}, newHead, nil)
 			} else {
 				_, err = step.Execute(sctx)
 			}

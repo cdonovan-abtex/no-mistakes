@@ -940,7 +940,7 @@ func attestHeadBeforePush(sctx *pipeline.StepContext, headSHA string, steps []*d
 		}
 		return nil
 	}
-	if err := restampPRAttestationWithSteps(sctx.Ctx, host, pr, headSHA, steps, sctx.Log, attestationPolicyFrom(sctx), sctx); err != nil {
+	if err := restampPRAttestationWithSteps(sctx, host, pr, headSHA, steps); err != nil {
 		return fmt.Errorf("%w: %w", errAttestationWriteFailed, err)
 	}
 	return nil
@@ -954,23 +954,17 @@ func attestationPolicyFrom(sctx *pipeline.StepContext) pipelineAttestationPolicy
 	return policy
 }
 
-// restampPRAttestation re-reads the current PR body, rewrites only the live
-// pipeline-attestation marker to newHeadSHA, and writes the body back without
-// sending a title. It does not insert an attestation that was not already
-// there. A host without PRContentReader is skipped with a warning rather than
-// failed: missing-reader is not a settlement miss. All currently supported
-// providers have readers; this keeps the optional-interface fallback intact.
-func restampPRAttestation(ctx context.Context, host scm.Host, pr *scm.PR, newHeadSHA string, logfn func(string)) error {
-	return restampPRAttestationWithSteps(ctx, host, pr, newHeadSHA, nil, logfn, pipelineAttestationPolicy{})
-}
-
-// restampPRAttestationWithSteps is restampPRAttestation with an explicit step
-// list and the current trusted attestation policy. A nil steps keeps whatever
-// statuses the existing attestation already carried; a non-nil steps replaces
-// them outright. allow_test_command_override always comes from policy, never
-// from the previous attestation. See attestHeadBeforePush for why a caller
-// picks one steps argument over the other.
-func restampPRAttestationWithSteps(ctx context.Context, host scm.Host, pr *scm.PR, newHeadSHA string, steps []*db.StepResult, logfn func(string), policy pipelineAttestationPolicy, publicationContexts ...*pipeline.StepContext) error {
+// restampPRAttestationWithSteps re-reads the current PR body and rebinds its
+// existing live attestation without sending a title or minting a missing marker.
+// Publication always uses the required run context and current trusted policy.
+// A nil steps keeps existing statuses; a non-nil steps replaces them. Overrides
+// come from current policy, never the old attestation. Hosts without content
+// readers still skip with a warning. See attestHeadBeforePush for step selection.
+func restampPRAttestationWithSteps(sctx *pipeline.StepContext, host scm.Host, pr *scm.PR, newHeadSHA string, steps []*db.StepResult) error {
+	if sctx == nil || sctx.Ctx == nil || sctx.Run == nil {
+		return fmt.Errorf("attestation restamp requires a publication run context")
+	}
+	ctx, logfn, policy := sctx.Ctx, sctx.Log, attestationPolicyFrom(sctx)
 	reader, ok := host.(scm.PRContentReader)
 	if !ok || pr == nil {
 		if logfn != nil && !ok {
@@ -1018,13 +1012,11 @@ func restampPRAttestationWithSteps(ctx context.Context, host scm.Host, pr *scm.P
 				// Do not send title: a body-only write leaves a concurrent title
 				// edit untouched.
 				proposed := scm.PRContent{Body: updated}
-				if len(publicationContexts) > 0 {
-					proposed, err = preparePRPublication(publicationContexts[0], proposed, newHeadSHA, scm.HostMaxPRBodyChars(host))
-					if err != nil {
-						return err
-					}
-					proposed.Title = "" // attestation restamps remain body-only
+				proposed, err = preparePRPublication(sctx, proposed, newHeadSHA, scm.HostMaxPRBodyChars(host))
+				if err != nil {
+					return err
 				}
+				proposed.Title = "" // attestation restamps remain body-only
 				_, err = host.UpdatePR(ctx, pr, proposed)
 			}
 		}
