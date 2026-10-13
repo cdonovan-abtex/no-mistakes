@@ -168,9 +168,12 @@ func (s *PRStep) Execute(sctx *pipeline.StepContext) (*pipeline.StepOutcome, err
 					return nil, err
 				}
 			}
-			appendix, err := s.buildPRAppendix(sctx, provider)
-			if err != nil {
-				return nil, err
+			var appendix string
+			if !hasPublicDescription(sctx) {
+				appendix, err = s.buildPRAppendix(sctx, provider)
+				if err != nil {
+					return nil, err
+				}
 			}
 			if err := retargetExistingPRIfNeeded(sctx, host, existing, runPRBaseBranch(sctx)); err != nil {
 				return nil, err
@@ -616,12 +619,6 @@ func (s *PRStep) buildPipelineSection(sctx *pipeline.StepContext, provider scm.P
 }
 
 func (s *PRStep) buildPipelineSectionFor(sctx *pipeline.StepContext, provider scm.Provider, owned bool) (pipelineMD, riskLine, testingMD string) {
-	if hasPublicDescription(sctx) {
-		// Raw evidence and agent-written prose are validation inputs, not public
-		// material. The final boundary reads the record fail-closed with errors.
-		pipelineMD, _ = publicValidationRecord(sctx, sctx.Run.HeadSHA)
-		return pipelineMD, "", ""
-	}
 	steps, err := sctx.DB.GetStepsByRun(sctx.Run.ID)
 	if err != nil {
 		slog.Warn("failed to query step results for pipeline summary", "error", err)

@@ -164,21 +164,23 @@ func updateOwnedPR(sctx *pipeline.StepContext, host scm.Host, pr *scm.PR, initia
 		if err != nil {
 			return err
 		}
-		if current.Body == "" && !parts.managed {
-			parts.before = emptyNarrative
+		var content prContent
+		if hasPublicDescription(sctx) {
+			var ready scm.PRContent
+			ready, err = preparePRPublication(sctx, scm.PRContent{}, publicationHead(sctx), bodyLimit)
+			content = prContent(ready)
+		} else {
+			if current.Body == "" && !parts.managed {
+				parts.before = emptyNarrative
+			}
+			// The author text around the appendix is kept verbatim, so only
+			// references it does not already close are added.
+			authorText := parts.before + "\n" + parts.after
+			content, err = composeOwnedPRContent(parts, title, appendIssuesSection(appendix, issuesSection(sctx, authorText)), bodyLimit)
 		}
-		// The author text around the appendix is kept verbatim, so only
-		// references it does not already close are added.
-		authorText := parts.before + "\n" + parts.after
-		content, err := composeOwnedPRContent(parts, title, appendIssuesSection(appendix, issuesSection(sctx, authorText)), bodyLimit)
 		if err != nil {
 			return err
 		}
-		ready, err := preparePRPublication(sctx, scm.PRContent(content), publicationHead(sctx), bodyLimit)
-		if err != nil {
-			return err
-		}
-		content = prContent(ready)
 		if err := verifyClosingIssuesInBody(content.Body, sctx); err != nil {
 			return err
 		}

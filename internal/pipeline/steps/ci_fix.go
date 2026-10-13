@@ -977,15 +977,30 @@ func restampPRAttestationWithSteps(sctx *pipeline.StepContext, host scm.Host, pr
 	for attempt := 1; attempt <= attempts; attempt++ {
 		content, err := reader.GetPRContent(ctx, pr)
 		if err == nil {
-			updated, rebound, rebindErr := rebindOwnedPRAttestation(content.Body, newHeadSHA, steps, policy)
-			if rebindErr != nil {
-				return fmt.Errorf("rebind PR appendix: %w", rebindErr)
-			}
-			// Azure's adapter clamps ordinary descriptions. Owned writes must
-			// fail before that boundary can cut off author text or the digest.
-			if rebound && hasPRAppendixMarkers(updated) {
-				if err := validateOwnedPRBudget(updated, scm.HostMaxPRBodyChars(host)); err != nil {
-					return err
+			var updated string
+			var rebound bool
+			if hasPublicDescription(sctx) {
+				if hasPRAppendixMarkers(content.Body) {
+					if _, err := parsePROwnedBody(content.Body); err != nil {
+						return fmt.Errorf("rebind PR appendix: %w", err)
+					}
+				}
+				marker := extractPipelineAttestationMarker(content.Body)
+				payload := strings.TrimSuffix(strings.TrimPrefix(marker, pipelineAttestationCommentPrefix), pipelineAttestationCommentClosingToken)
+				var standing pipelineAttestation
+				rebound = strings.TrimSpace(newHeadSHA) != "" && marker != "" && json.Unmarshal([]byte(payload), &standing) == nil
+			} else {
+				var rebindErr error
+				updated, rebound, rebindErr = rebindOwnedPRAttestation(content.Body, newHeadSHA, steps, policy)
+				if rebindErr != nil {
+					return fmt.Errorf("rebind PR appendix: %w", rebindErr)
+				}
+				// Azure's adapter clamps ordinary descriptions. Owned writes must
+				// fail before that boundary can cut off author text or the digest.
+				if rebound && hasPRAppendixMarkers(updated) {
+					if err := validateOwnedPRBudget(updated, scm.HostMaxPRBodyChars(host)); err != nil {
+						return err
+					}
 				}
 			}
 			if !rebound {
@@ -994,7 +1009,13 @@ func restampPRAttestationWithSteps(sctx *pipeline.StepContext, host scm.Host, pr
 				}
 				return nil
 			}
-			if updated == content.Body {
+			var proposed scm.PRContent
+			proposed, err = preparePRPublication(sctx, scm.PRContent{Body: updated}, newHeadSHA, scm.HostMaxPRBodyChars(host))
+			if err != nil {
+				return err
+			}
+			proposed.Title = ""
+			if proposed.Body == content.Body {
 				return nil
 			}
 
@@ -1011,12 +1032,6 @@ func restampPRAttestationWithSteps(sctx *pipeline.StepContext, host scm.Host, pr
 			default:
 				// Do not send title: a body-only write leaves a concurrent title
 				// edit untouched.
-				proposed := scm.PRContent{Body: updated}
-				proposed, err = preparePRPublication(sctx, proposed, newHeadSHA, scm.HostMaxPRBodyChars(host))
-				if err != nil {
-					return err
-				}
-				proposed.Title = "" // attestation restamps remain body-only
 				_, err = host.UpdatePR(ctx, pr, proposed)
 			}
 		}
