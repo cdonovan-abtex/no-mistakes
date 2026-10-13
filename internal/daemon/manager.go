@@ -28,6 +28,7 @@ import (
 	"github.com/kunchenguid/no-mistakes/internal/pipeline"
 	"github.com/kunchenguid/no-mistakes/internal/pipeline/steps"
 	"github.com/kunchenguid/no-mistakes/internal/procreap"
+	"github.com/kunchenguid/no-mistakes/internal/publicdescription"
 	"github.com/kunchenguid/no-mistakes/internal/reviewqa"
 	"github.com/kunchenguid/no-mistakes/internal/runenv"
 	"github.com/kunchenguid/no-mistakes/internal/safeurl"
@@ -828,6 +829,7 @@ func assertTrustedConfigReadable(ctx context.Context, wtDir, defaultBranch, trus
 // A proof-mode push creates an unclaimed row: the first matching observer
 // receives the sole `created` disposition by atomically claiming it.
 func (m *RunManager) HandlePushReceived(ctx context.Context, params *ipc.PushReceivedParams) (string, error) {
+	ctx = publicdescription.WithRequest(ctx, params.PublicDescriptionPath)
 	// Ref deletion (git push remote :branch) sends new SHA as all-zeros.
 	// Nothing to validate - skip pipeline.
 	if git.IsZeroSHA(params.New) {
@@ -869,6 +871,7 @@ func (m *RunManager) HandlePushReceived(ctx context.Context, params *ipc.PushRec
 // HandleStartFreshRun creates or replays a proof-mode launch only after
 // checking the creation context under the repository/branch lock.
 func (m *RunManager) HandleStartFreshRun(ctx context.Context, params *ipc.StartFreshRunParams) (ipc.LaunchReceipt, error) {
+	ctx = publicdescription.WithRequest(ctx, params.PublicDescriptionPath)
 	repo, err := m.db.GetRepo(params.RepoID)
 	if err != nil {
 		return ipc.LaunchReceipt{}, fmt.Errorf("get repo: %w", err)
@@ -912,6 +915,9 @@ func (m *RunManager) startFreshLaunch(ctx context.Context, repo *db.Repo, branch
 			return "", err
 		}
 		if existing != nil {
+			if !existing.PublicDescription.MatchesRequest(publicdescription.RequestPath(ctx)) {
+				return "", fmt.Errorf("public description cannot replace an existing run pin")
+			}
 			if planID != "" && (existing.VerificationPlan == nil || existing.VerificationPlan.ID != planID) {
 				return "", fmt.Errorf("verification plan cannot replace an existing run attachment")
 			}
@@ -1186,6 +1192,12 @@ func (m *RunManager) HandleRerun(ctx context.Context, repoID, branch, previousRu
 	// likewise can only add omission, never remove it.
 	// Closing references are structured run metadata and survive reruns: an
 	// explicit request is added to, never replaces, what the selected run carried.
+	// A rerun remains private-public separated even when the caller omits
+	// the launch flag. Re-read the committed source at the new submitted head;
+	// absence or corruption fails rather than falling back to intent prose.
+	if publicdescription.RequestPath(ctx) == "" && selectedRun.PublicDescription != nil {
+		ctx = publicdescription.WithRequest(ctx, selectedRun.PublicDescription.Path)
+	}
 	closingIssues = append(append([]string(nil), selectedRun.ClosingIssueRefs...), closingIssues...)
 	return m.startRunWithIntentSource(ctx, repo, branch, headSHA, baseSHA, "rerun", skipSteps, intent, intentSource, storedPRBaseBranch, selectedRun.OmitIntent || omitIntent, inheritablePRURL(selectedRun), planID, closingIssues, profiles...)
 }
@@ -1441,11 +1453,25 @@ func (m *RunManager) startRunWithIntentSourceLocked(ctx context.Context, repo *d
 		}
 	}
 
+	public, err := publicdescription.Read(ctx, m.paths.RepoDir(repo.ID), headSHA, publicdescription.RequestPath(ctx))
+	if err != nil {
+		return "", err
+	}
+	if public != nil {
+		active, err := m.db.GetActiveRun(repo.ID, branch)
+		if err != nil {
+			return "", err
+		}
+		if active != nil {
+			return "", fmt.Errorf("public description is accepted only for a new run; reattach without --public-description")
+		}
+	}
+
 	// Cancel any active run for this repo+branch.
 	m.cancelActiveRuns(repo.ID, branch)
 
 	storedIntent := intent
-	if source != db.RunIntentSourceRerun && launchNonce == "" && plan == nil {
+	if source != db.RunIntentSourceRerun && launchNonce == "" && plan == nil && public == nil {
 		storedIntent = strings.TrimSpace(storedIntent)
 	}
 	var runIntent *db.RunIntent
@@ -1467,7 +1493,7 @@ func (m *RunManager) startRunWithIntentSourceLocked(ctx context.Context, repo *d
 	// pr.publish_intent is enforced independently by the PR step.
 	storedOmitIntent := omitIntent || (globalCfg != nil && !globalCfg.Intent.PublishesIntentByDefault())
 
-	run, err := m.db.InsertRunWithIntentAndLaunchNonce(repo.ID, branch, headSHA, baseSHA, runIntent, launchNonce, validationGeneration, intentDigest, storedPRBaseBranch, storedOmitIntent, plan, pin)
+	run, err := m.db.InsertRunWithPublicDescription(repo.ID, branch, headSHA, baseSHA, runIntent, launchNonce, validationGeneration, intentDigest, storedPRBaseBranch, storedOmitIntent || public != nil, plan, public, pin)
 	if err != nil {
 		trackStartFailure("create_run")
 		return "", fmt.Errorf("create run: %w", err)

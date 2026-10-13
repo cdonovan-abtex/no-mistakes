@@ -44,7 +44,7 @@ func supportsPRTemplates(provider scm.Provider) bool {
 }
 
 func configuredPRTemplate(sctx *pipeline.StepContext) string {
-	if sctx.Config == nil {
+	if hasPublicDescription(sctx) || sctx.Config == nil {
 		return ""
 	}
 	return sctx.Config.PR.Template

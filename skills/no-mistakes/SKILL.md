@@ -149,6 +149,15 @@ asked for that might otherwise look surprising in the diff. A few sentences to a
 short paragraph is normal - write down what you learned from the conversation
 that a reviewer reading only the diff would not know.
 
+When full acceptance intent must stay private, supply an independently authored,
+committed JSON public title/body with `--public-description <repo-relative-path>`.
+Keep the complete private intent in the intent input; do not substitute the public
+summary for it. All validation stays on. The forge boundary publishes only that
+pinned description and source-bound machine validation facts, not intent-derived
+findings, summaries or raw evidence. File/stdin input and omission of the Intent
+section alone are not that privacy boundary. See the
+[public description contract](https://kunchenguid.github.io/no-mistakes/reference/cli/#independent-public-description).
+
 ## Validate and decide
 
 Run the pipeline and decide on its findings as they come up:

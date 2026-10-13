@@ -27,6 +27,7 @@ import (
 	"github.com/kunchenguid/no-mistakes/internal/paths"
 	"github.com/kunchenguid/no-mistakes/internal/pipeline"
 	"github.com/kunchenguid/no-mistakes/internal/pipeline/steps"
+	"github.com/kunchenguid/no-mistakes/internal/publicdescription"
 	"github.com/kunchenguid/no-mistakes/internal/telemetry"
 	"github.com/kunchenguid/no-mistakes/internal/types"
 	"github.com/kunchenguid/no-mistakes/internal/verificationplan"
@@ -187,6 +188,11 @@ func newAxiRunCmd() *cobra.Command {
 			"draft from the diff and commit messages only. It is persisted on the run;\n" +
 			"the global intent.publish_intent: false default applies to runs started\n" +
 			"without it. The running daemon must honor it; an older daemon is refused.\n\n" +
+			"--public-description PATH pins an independently supplied final public title/body\n" +
+			"from a repository-relative committed JSON file. The complete private intent\n" +
+			"still drives validation. Every forge body write publishes only the pinned\n" +
+			"description and source-bound machine validation facts; raw findings,\n" +
+			"summaries and artifacts remain local. Older daemons are refused before push.\n\n" +
 			"--closes <issue> adds a closing reference (Closes #42) to the PR body's\n" +
 			"Issues section. Repeat it for each issue the PR fully resolves; a value is\n" +
 			"an issue number or a project-qualified reference (owner/repo#42, or\n" +
@@ -247,6 +253,7 @@ func newAxiRunCmd() *cobra.Command {
 	cmd.Flags().StringVar(&baseBranch, "base-branch", "", "integration branch to open the PR against for this run only (overrides pr.base_branch)")
 	cmd.Flags().BoolVar(&noPublishIntent, "no-publish-intent", false, "keep the generated Intent section out of the PR body for this run (tighten-only; full intent still reaches every step prompt except PR drafting)")
 	cmd.Flags().StringArrayVar(&closesIssues, "closes", nil, "issue this PR closes when merged; repeat for multiple issues (42, owner/repo#42, or a nested GitLab project path)")
+	cmd.Flags().String("public-description", "", "repository-relative committed JSON file with final public title/body; private intent stays validation-only (new runs or matching reattach)")
 	cmd.Flags().String("verification-plan", "", "capture a nonempty UTF-8 verification plan as separate run evidence (new runs only)")
 	bindAxiWaitFlag(cmd, &wait)
 	bindPiProfileFlags(cmd, &model, &effort)
@@ -282,7 +289,14 @@ func runAxiRunWithLaunchProof(cmd *cobra.Command, autoYes bool, skipSteps []type
 	if len(closesIssues) > 0 && slices.Contains(skipSteps, types.StepPR) {
 		return emitError(cmd, 2, "--closes cannot be combined with --skip pr: skipping the PR step publishes no closing reference", "Drop pr from --skip, or drop --closes.")
 	}
-	ctx := cmd.Context()
+	publicPath := ""
+	if cmd.Flags().Lookup("public-description") != nil && cmd.Flags().Changed("public-description") {
+		publicPath, _ = cmd.Flags().GetString("public-description")
+		if err := publicdescription.ValidatePath(publicPath); err != nil {
+			return emitError(cmd, 2, err.Error())
+		}
+	}
+	ctx := publicdescription.WithRequest(cmd.Context(), publicPath)
 	driveCtx, cancel, err := boundAxiWait(ctx, wait)
 	if err != nil {
 		return emitError(cmd, 2, err.Error(), "Pass a positive duration such as --wait 8m")
@@ -293,6 +307,9 @@ func runAxiRunWithLaunchProof(cmd *cobra.Command, autoYes bool, skipSteps []type
 		return emitError(cmd, 1, err.Error(), repoInitHelp(err)...)
 	}
 	defer env.close()
+	if err := requireDaemonPublicDescription(env.client, env.repo.ID, publicPath); err != nil {
+		return emitError(cmd, 2, err.Error())
+	}
 	// Probe before any RPC carries omit_intent: an older daemon would drop
 	// the unknown field silently and publish the intent it was asked to
 	// withhold, so the run is refused instead. An unreadable global config
@@ -336,7 +353,7 @@ func runAxiRunWithLaunchProof(cmd *cobra.Command, autoYes bool, skipSteps []type
 		if strings.TrimSpace(validationGeneration) == "" {
 			return emitError(cmd, 2, "--validation-generation is required with --launch-nonce")
 		}
-		receipt, err := claimLaunchReceipt(env.client, env.repo.ID, branch, launchNonce, headSHA, validationGeneration, digestLaunchIntent(intent), baseBranch, omitIntent, profile)
+		receipt, err := claimLaunchReceipt(env.client, env.repo.ID, branch, launchNonce, headSHA, validationGeneration, digestLaunchIntent(intent), baseBranch, omitIntent, publicPath, profile)
 		if err != nil {
 			return emitError(cmd, 1, fmt.Sprintf("claim launch receipt: %v", err))
 		}
@@ -356,6 +373,9 @@ func runAxiRunWithLaunchProof(cmd *cobra.Command, autoYes bool, skipSteps []type
 			return emitError(cmd, 1, fmt.Sprintf("get active run: %v", err))
 		}
 		if active != nil {
+			if !active.PublicDescription.MatchesRequest(publicPath) {
+				return emitError(cmd, 2, "public description cannot replace an active run pin; omit --public-description to reattach")
+			}
 			if !active.PiProfile.Matches(profile) {
 				return emitError(cmd, 2, "active run has a different Pi profile; omit --model/--effort to reattach")
 			}
@@ -397,6 +417,9 @@ func runAxiRunWithLaunchProof(cmd *cobra.Command, autoYes bool, skipSteps []type
 				`Pass the user's goal with --intent TEXT, --intent-file PATH, or --intent - for stdin`)
 		}
 		if err := validateAxiRunBaseBranch(ctx, baseBranch); err != nil {
+			return emitError(cmd, 2, err.Error())
+		}
+		if _, err := publicdescription.Read(ctx, ".", headSHA, publicPath); err != nil {
 			return emitError(cmd, 2, err.Error())
 		}
 		// Starting a fresh run: apply the same pre-flight the human wizard
@@ -779,6 +802,9 @@ func triggerRun(ctx context.Context, env *axiEnv, branch string, skipSteps []typ
 	if err != nil {
 		return "", fmt.Errorf("prepare private mirror for %q: refresh submission head: %w", branch, err)
 	}
+	if _, err := publicdescription.Read(ctx, ".", submissionHead, publicdescription.RequestPath(ctx)); err != nil {
+		return "", err
+	}
 	if submissionHead != observedHead {
 		priorRunIDs, err = runIDsForHead(env.client, env.repo.ID, branch, submissionHead)
 		if err != nil {
@@ -791,6 +817,9 @@ func triggerRun(ctx context.Context, env *axiEnv, branch string, skipSteps []typ
 	reconciliation, err := gate.ReconcileStaleBranch(ctx, env.p.RepoDir(env.repo.ID), ".", branch, submissionHead, "")
 	if err != nil {
 		return "", fmt.Errorf("prepare private mirror for %q: %w", branch, err)
+	}
+	if p := publicdescription.RequestPath(ctx); p != "" {
+		pushOptions = append(pushOptions, publicDescriptionPushOptionPrefix+p)
 	}
 	// A reconciled branch is re-created by this push, so the hook reports no
 	// previous head. Carry the archived pre-reconciliation head so the run's
@@ -816,6 +845,9 @@ func triggerRun(ctx context.Context, env *axiEnv, branch string, skipSteps []typ
 	}
 
 	if run, _ := waitForTriggeredRunForHead(ctx, env.client, env.repo.ID, branch, submissionHead, priorRunIDs, triggerWaitTimeout); run != nil {
+		if !run.PublicDescription.MatchesRequest(publicdescription.RequestPath(ctx)) {
+			return "", fmt.Errorf("triggered run has a conflicting public description")
+		}
 		if !run.PiProfile.Matches(profile) {
 			return "", fmt.Errorf("triggered run has a conflicting Pi profile")
 		}
@@ -833,6 +865,7 @@ func triggerRun(ctx context.Context, env *axiEnv, branch string, skipSteps []typ
 	var rr ipc.RerunResult
 	params := rerunParams(env.repo.ID, branch, skipSteps, intent, baseBranch)
 	params.OmitIntent = omitIntent
+	params.PublicDescriptionPath = publicdescription.RequestPath(ctx)
 	params.PiProfile = profile
 	params.ClosingIssueRefs = closesIssues
 	params.VerificationPlanID = planID
@@ -849,11 +882,11 @@ func triggerRun(ctx context.Context, env *axiEnv, branch string, skipSteps []typ
 	return rr.RunID, nil
 }
 
-func claimLaunchReceipt(client *ipc.Client, repoID, branch, launchNonce, submittedHeadSHA, validationGeneration, intentDigest, baseBranch string, omitIntent bool, profiles ...*agentcfg.PiProfile) (*ipc.LaunchReceipt, error) {
+func claimLaunchReceipt(client *ipc.Client, repoID, branch, launchNonce, submittedHeadSHA, validationGeneration, intentDigest, baseBranch string, omitIntent bool, publicPath string, profiles ...*agentcfg.PiProfile) (*ipc.LaunchReceipt, error) {
 	var result ipc.ClaimLaunchReceiptResult
 	if err := client.Call(ipc.MethodClaimLaunchReceipt, &ipc.ClaimLaunchReceiptParams{
 		RepoID: repoID, Branch: branch, LaunchNonce: launchNonce, PiProfile: agentcfg.OptionalPiProfile(profiles),
-		SubmittedHeadSHA: submittedHeadSHA, ValidationGeneration: validationGeneration, IntentDigest: intentDigest, PRBaseBranch: baseBranch, OmitIntent: omitIntent,
+		SubmittedHeadSHA: submittedHeadSHA, ValidationGeneration: validationGeneration, IntentDigest: intentDigest, PRBaseBranch: baseBranch, OmitIntent: omitIntent, PublicDescriptionPath: publicPath,
 	}, &result); err != nil {
 		return nil, err
 	}
@@ -871,6 +904,12 @@ func triggerProofRun(ctx context.Context, env *axiEnv, branch, headSHA string, s
 	pushOptions := append(formatSkipPushOptions(skipSteps), formatPiProfilePushOptions(profile)...)
 	pushOptions = append(pushOptions, formatVerificationPlanPushOptions(planID)...)
 	pushOptions = append(pushOptions, formatClosingIssueRefsPushOptions(closesIssues)...)
+	if p := publicdescription.RequestPath(ctx); p != "" {
+		if _, err := publicdescription.Read(ctx, ".", headSHA, p); err != nil {
+			return nil, err
+		}
+		pushOptions = append(pushOptions, publicDescriptionPushOptionPrefix+p)
+	}
 	pushOptions = append(pushOptions,
 		formatIntentPushOption(intent),
 		formatLaunchNoncePushOption(launchNonce),
@@ -901,7 +940,8 @@ func triggerProofRun(ctx context.Context, env *axiEnv, branch, headSHA string, s
 	if err := env.client.Call(ipc.MethodStartFreshRun, &ipc.StartFreshRunParams{
 		RepoID: env.repo.ID, Branch: branch, HeadSHA: headSHA, SkipSteps: skipSteps,
 		Intent: intent, LaunchNonce: launchNonce, ValidationGeneration: validationGeneration, PRBaseBranch: baseBranch, OmitIntent: omitIntent, PiProfile: profile, VerificationPlanID: planID,
-		ClosingIssueRefs: closesIssues,
+		ClosingIssueRefs:      closesIssues,
+		PublicDescriptionPath: publicdescription.RequestPath(ctx),
 	}, &result); err != nil {
 		return nil, fmt.Errorf("start fresh run: %w", err)
 	}
@@ -914,7 +954,7 @@ func waitForLaunchReceipt(ctx context.Context, client *ipc.Client, repoID, branc
 	poll := time.NewTicker(150 * time.Millisecond)
 	defer poll.Stop()
 	for {
-		receipt, err := claimLaunchReceipt(client, repoID, branch, launchNonce, submittedHeadSHA, validationGeneration, digestLaunchIntent(intent), baseBranch, omitIntent, profiles...)
+		receipt, err := claimLaunchReceipt(client, repoID, branch, launchNonce, submittedHeadSHA, validationGeneration, digestLaunchIntent(intent), baseBranch, omitIntent, publicdescription.RequestPath(ctx), profiles...)
 		if err != nil {
 			return nil, err
 		}

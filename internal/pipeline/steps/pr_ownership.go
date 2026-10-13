@@ -174,6 +174,11 @@ func updateOwnedPR(sctx *pipeline.StepContext, host scm.Host, pr *scm.PR, initia
 		if err != nil {
 			return err
 		}
+		ready, err := preparePRPublication(sctx, scm.PRContent(content), publicationHead(sctx), bodyLimit)
+		if err != nil {
+			return err
+		}
+		content = prContent(ready)
 		if err := verifyClosingIssuesInBody(content.Body, sctx); err != nil {
 			return err
 		}
@@ -186,7 +191,7 @@ func updateOwnedPR(sctx *pipeline.StepContext, host scm.Host, pr *scm.PR, initia
 			continue
 		}
 		if content.Body != current.Body || content.Title != "" {
-			if _, err := host.UpdatePR(sctx.Ctx, pr, scm.PRContent(content)); err != nil {
+			if _, err := updatePRWithPublication(sctx, host, pr, scm.PRContent(content)); err != nil {
 				return fmt.Errorf("update templated PR: %w", err)
 			}
 		}

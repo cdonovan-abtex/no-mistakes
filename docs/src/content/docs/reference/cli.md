@@ -132,6 +132,7 @@ no-mistakes axi run --intent "the user's goal" --closes 95 --closes owner/repo#1
 | `--intent`      | `string` | (none)  | What the user set out to accomplish; `-` reads stdin to EOF; exclusive with `--intent-file` |
 | `--intent-file` | `string` | (none)  | Read intent from a file relative to the caller's working directory; exclusive with `--intent` |
 | `--verification-plan` | `string` | (none) | Path to a nonempty UTF-8 verification plan, at most 64 KiB (65,536 bytes), captured as separate evidence for a new run only |
+| `--public-description` | `string` | (none) | Repository-relative committed JSON file containing the independently supplied final public `title` and `body`; keeps full intent private to validation |
 | `-y`, `--yes`   | `bool`   | `false` | Auto-resolve eligible gates until a decision point or outcome                                       |
 | `--skip`        | `string` | (none)  | Comma-separated pipeline steps to skip                                                               |
 | `--base-branch` | `string` | (none)  | Integration branch for this run only; overrides [`pr.base_branch`](/no-mistakes/reference/repo-config/#prbase_branch) |
@@ -155,7 +156,7 @@ A new run requires exactly one of `--intent TEXT`, `--intent-file PATH`, or `--i
 
 All three inputs must be valid UTF-8 and at most **49,122 bytes**, including whitespace. This ceiling comes from the existing single Git push-option transport: its 65,516-byte packet payload must hold the option prefix and base64-encoded intent. Oversized or malformed input is rejected before run resources open, never truncated or repaired. `--intent-file` requires a regular file (a symlink to one is allowed); directories, devices, and named pipes are rejected. Use `--intent -` for piped input: it reads until EOF, or rejects as soon as the size limit is exceeded, with no input timeout.
 
-File and stdin content reaches the existing run request unchanged, including quotes, backticks, dollar signs, Unicode, and multiline/trailing newline content. All three transports then follow the same existing run semantics: ordinary explicit intent is stored with leading/trailing whitespace removed; strict launches and runs with a verification-plan attachment preserve those bytes. This is not a universal persisted-byte guarantee. File paths are literal (`--intent-file -` names a file called `-`); only `--intent -` selects stdin. To supply the literal intent `-`, use a file or stdin.
+File and stdin content reaches the existing run request unchanged, including quotes, backticks, dollar signs, Unicode, and multiline/trailing newline content. All three transports then follow the same existing run semantics: ordinary explicit intent is stored with leading/trailing whitespace removed; strict launches and runs with a verification-plan attachment or independent public description preserve those bytes. This is not a universal persisted-byte guarantee. File paths are literal (`--intent-file -` names a file called `-`); only `--intent -` selects stdin. To supply the literal intent `-`, use a file or stdin.
 
 ```sh
 no-mistakes axi run --intent-file ./intent.md
@@ -185,6 +186,30 @@ The captured bytes live privately at `<NM_HOME>/run-inputs/<run-id>/verification
 Review and Test, including their fix turns, receive the same digest-checked snapshot as labeled evidence. Editing or deleting the original source cannot change it; a missing or altered snapshot fails closed when consumed. Reattach with `no-mistakes axi run` **without** `--verification-plan`; providing the flag for an existing run is refused, including strict-launch replay. A new run without the flag does not inherit a prior run's plan. Capture time records when no-mistakes read the file, not proof that its author wrote it before implementation.
 
 Only attached runs receive plan-aware guidance. Review and Test assess the proposed scenarios and independent expected results against actual evidence; the attachment does not direct Review to execute verification. Test receives the execution guidance: when no existing check drives a scenario, perform repeatable product verification with a retained artifact, or name the missing capability and how to provide it and mark the scenario untested. Both steps must follow repository testing rules before changing permanent tests; an attached plan alone is not a reason to add tests. A missing-test finding must identify the observable failure, why existing checks and product evidence do not cover it, and the independent expected result. Runs without a plan retain their existing Review and Test guidance.
+
+### Independent public description
+
+```json
+{"title":"fix: handle empty input","body":"## What Changed\n\n- Handle empty input without an error."}
+```
+
+Commit this JSON file (for example `public-description.json`), then start validation with both inputs:
+
+```sh
+no-mistakes axi run --intent-file /private/full-intent.txt --public-description public-description.json
+```
+
+The public description is final, independently authored publication material, **not acceptance intent**. The complete intent remains unchanged in the private run record and in Review, Test, Document, Lint and CI-repair inputs; validation and all normal gates remain on. This mode also suppresses the generated Intent section and withholds intent from PR drafting. Do not shorten private intent to make it publishable.
+
+The file must be a UTF-8 JSON object with only `title` and `body`, at most 48 KiB (49,152 bytes), with a nonempty single-line title and nonempty body. Paths must be repository-relative without traversal. The committed blob at the exact submitted SHA is read, not the mutable working copy. The run pins its path, source SHA, SHA-256 digest, title and body immutably; subsequent pipeline fixes cannot replace that source. Every body write rechecks it, failing closed on unreadable or mismatched source or insufficient provider budget. The final public description and machine evidence are never truncated to fit.
+
+Immediately before **every** pipeline `CreatePR`/`UpdatePR` body write (normal, drafting fallback, owned/template update and pre-push/CI attestation refresh), only this public narrative and a generated, source-bound machine validation record are eligible for emission. The record retains real ordered step statuses, current-head live-validation verdict/counts when available, and explicit override/opt-in markers. Free-text override reasons stay private; the public record labels the exception rather than reporting a clean pass. The source SHA and digest identify the public description separately from the attested pipeline head. Explicit `--closes` references retain their usual live verification.
+
+Findings, fix summaries, review answers, test commands, captions, logs and raw artifacts may contain or paraphrase private intent: they remain local and are neither embedded, uploaded as media, nor pushed to the evidence branch in this mode. This is a positive source boundary, not a private-text scanner or a prompt instruction. Configured `pr.template`, `pr.title_format` and `pr.appendix` cannot replace the pinned final public material; existing author narrative is replaced by the supplied description, not preserved or republished. Attestation-only refreshes remain body-only writes.
+
+Reattach without the flag, or with the same pinned path; a different path or adding a description to an existing ordinary run is refused. `rerun` inherits the path and reads its committed blob at the new submitted head (missing or invalid source fails closed). A fresh run without this flag retains ordinary publication behavior. File/stdin transports and `--no-publish-intent` alone do **not** establish this boundary: intent-derived generated evidence can still be public in ordinary runs.
+
+The CLI refuses an older daemon before pushing. Use compatible current binaries for the CLI, gate notification hook and daemon; never downgrade a daemon serving separated runs. Upgrading shared services must be coordinated by their owner, not by an in-flight validation driver. This protects generated PR bodies, not source diffs, public-description files themselves, agent-authored commit messages, or publication outside no-mistakes; keep private material out of those surfaces too.
 
 ### Other run options
 

@@ -940,7 +940,7 @@ func attestHeadBeforePush(sctx *pipeline.StepContext, headSHA string, steps []*d
 		}
 		return nil
 	}
-	if err := restampPRAttestationWithSteps(sctx.Ctx, host, pr, headSHA, steps, sctx.Log, attestationPolicyFrom(sctx)); err != nil {
+	if err := restampPRAttestationWithSteps(sctx.Ctx, host, pr, headSHA, steps, sctx.Log, attestationPolicyFrom(sctx), sctx); err != nil {
 		return fmt.Errorf("%w: %w", errAttestationWriteFailed, err)
 	}
 	return nil
@@ -970,7 +970,7 @@ func restampPRAttestation(ctx context.Context, host scm.Host, pr *scm.PR, newHea
 // them outright. allow_test_command_override always comes from policy, never
 // from the previous attestation. See attestHeadBeforePush for why a caller
 // picks one steps argument over the other.
-func restampPRAttestationWithSteps(ctx context.Context, host scm.Host, pr *scm.PR, newHeadSHA string, steps []*db.StepResult, logfn func(string), policy pipelineAttestationPolicy) error {
+func restampPRAttestationWithSteps(ctx context.Context, host scm.Host, pr *scm.PR, newHeadSHA string, steps []*db.StepResult, logfn func(string), policy pipelineAttestationPolicy, publicationContexts ...*pipeline.StepContext) error {
 	reader, ok := host.(scm.PRContentReader)
 	if !ok || pr == nil {
 		if logfn != nil && !ok {
@@ -1017,7 +1017,15 @@ func restampPRAttestationWithSteps(ctx context.Context, host scm.Host, pr *scm.P
 			default:
 				// Do not send title: a body-only write leaves a concurrent title
 				// edit untouched.
-				_, err = host.UpdatePR(ctx, pr, scm.PRContent{Body: updated})
+				proposed := scm.PRContent{Body: updated}
+				if len(publicationContexts) > 0 {
+					proposed, err = preparePRPublication(publicationContexts[0], proposed, newHeadSHA, scm.HostMaxPRBodyChars(host))
+					if err != nil {
+						return err
+					}
+					proposed.Title = "" // attestation restamps remain body-only
+				}
+				_, err = host.UpdatePR(ctx, pr, proposed)
 			}
 		}
 		if err == nil {

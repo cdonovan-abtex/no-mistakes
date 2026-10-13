@@ -162,7 +162,7 @@ func (s *PRStep) Execute(sctx *pipeline.StepContext) (*pipeline.StepOutcome, err
 				}
 				emptyNarrative = neutralizeAttestationMarkers(provider, draft.Body)
 				title = draft.Title
-			} else if sctx.Config != nil && sctx.Config.PR.TitleFormat != "" {
+			} else if !hasPublicDescription(sctx) && sctx.Config != nil && sctx.Config.PR.TitleFormat != "" {
 				title, err = s.draftConfiguredPRTitle(sctx, branch, baseBranch, baseSHA)
 				if err != nil {
 					return nil, err
@@ -189,7 +189,7 @@ func (s *PRStep) Execute(sctx *pipeline.StepContext) (*pipeline.StepOutcome, err
 			if err := retargetExistingPRIfNeeded(sctx, host, existing, runPRBaseBranch(sctx)); err != nil {
 				return nil, err
 			}
-			updated, err = host.UpdatePR(ctx, existing, scm.PRContent(content))
+			updated, err = updatePRWithPublication(sctx, host, existing, scm.PRContent(content))
 			if err != nil {
 				// A revalidation cycle may already have pushed a repaired head. Its
 				// attestation is part of delivery, so CI must not run after a failed
@@ -220,7 +220,7 @@ func (s *PRStep) Execute(sctx *pipeline.StepContext) (*pipeline.StepOutcome, err
 		return nil, err
 	}
 	sctx.Log("creating pull request...")
-	created, err := host.CreatePR(ctx, branch, baseBranch, scm.PRContent(content))
+	created, err := createPRWithPublication(sctx, host, branch, baseBranch, scm.PRContent(content))
 	if err != nil {
 		return nil, err
 	}
@@ -416,7 +416,16 @@ func describePR(pr *scm.PR) string {
 // per-source scrub is a set of guards that has to be complete to work, and the
 // next rendering path somebody adds is not going to have one; a boundary scrub
 // covers sources nobody has written yet.
-func (s *PRStep) buildPRContent(sctx *pipeline.StepContext, branch, baseBranch, baseSHA string, provider scm.Provider, bodyLimit int) (prContent, error) {
+func (s *PRStep) buildPRContent(sctx *pipeline.StepContext, branch, baseBranch, baseSHA string, provider scm.Provider, bodyLimit int) (content prContent, err error) {
+	// Composition-time protection avoids unnecessary public side effects;
+	// create/update helpers repeat it at the actual forge invocation.
+	defer func() {
+		if err == nil {
+			var safe scm.PRContent
+			safe, err = preparePRPublication(sctx, scm.PRContent(content), sctx.Run.HeadSHA, bodyLimit)
+			content = prContent(safe)
+		}
+	}()
 	if name := configuredPRTemplate(sctx); name != "" {
 		if !supportsPRTemplates(provider) {
 			return prContent{}, fmt.Errorf("pr.template is unsupported by this provider")
@@ -437,7 +446,7 @@ func (s *PRStep) buildPRContent(sctx *pipeline.StepContext, branch, baseBranch, 
 		appendix = appendIssuesSection(appendix, issuesSection(sctx, narrative))
 		return composeOwnedPRContent(prOwnedBody{before: narrative}, content.Title, appendix, bodyLimit)
 	}
-	content, err := s.draftPRContent(sctx, branch, baseBranch, baseSHA, provider, bodyLimit)
+	content, err = s.draftPRContent(sctx, branch, baseBranch, baseSHA, provider, bodyLimit)
 	if err != nil {
 		return prContent{}, err
 	}
@@ -589,6 +598,9 @@ func prTitleScopeRules(sctx *pipeline.StepContext) string {
 }
 
 func renderPRTitle(sctx *pipeline.StepContext, title string) (string, error) {
+	if hasPublicDescription(sctx) {
+		return sctx.Run.PublicDescription.Title, nil
+	}
 	if sctx == nil || sctx.Config == nil || sctx.Config.PR.TitleFormat == "" {
 		return conventional.TightenTitle(title), nil
 	}
@@ -612,6 +624,12 @@ func (s *PRStep) buildPipelineSection(sctx *pipeline.StepContext, provider scm.P
 }
 
 func (s *PRStep) buildPipelineSectionFor(sctx *pipeline.StepContext, provider scm.Provider, owned bool) (pipelineMD, riskLine, testingMD string) {
+	if hasPublicDescription(sctx) {
+		// Raw evidence and agent-written prose are validation inputs, not public
+		// material. The final boundary reads the record fail-closed with errors.
+		pipelineMD, _ = publicValidationRecord(sctx, sctx.Run.HeadSHA)
+		return pipelineMD, "", ""
+	}
 	steps, err := sctx.DB.GetStepsByRun(sctx.Run.ID)
 	if err != nil {
 		slog.Warn("failed to query step results for pipeline summary", "error", err)

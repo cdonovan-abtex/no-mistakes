@@ -42,7 +42,7 @@ func publicPRIntent(sctx *pipeline.StepContext) string {
 // body. The decision is stamped on the run row at start, so it survives
 // daemon restarts and reruns.
 func runOmitsIntent(sctx *pipeline.StepContext) bool {
-	return sctx != nil && sctx.Run != nil && sctx.Run.OmitIntent
+	return sctx != nil && sctx.Run != nil && (sctx.Run.OmitIntent || sctx.Run.PublicDescription != nil)
 }
 
 // prDraftIntentPromptSection is the intent section for the PR-drafting turns
