@@ -1339,7 +1339,7 @@ func registerHandlers(srv *ipc.Server, mgr *RunManager, d *db.DB, shutdown func(
 		if err != nil {
 			return nil, err
 		}
-		run, claimed, err := d.ClaimLaunchReceipt(p.RepoID, p.Branch, p.LaunchNonce, p.SubmittedHeadSHA, p.ValidationGeneration, p.IntentDigest, prBaseBranch, p.OmitIntent, p.PiProfile)
+		run, claimed, err := d.ClaimLaunchReceipt(p.RepoID, p.Branch, p.LaunchNonce, p.SubmittedHeadSHA, p.ValidationGeneration, p.IntentDigest, prBaseBranch, p.OmitIntent, p.PublicDescriptionPath, p.PiProfile)
 		if err != nil {
 			return nil, fmt.Errorf("claim launch receipt: %w", err)
 		}
