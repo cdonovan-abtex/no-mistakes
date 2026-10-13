@@ -62,7 +62,11 @@ func TestPublicDescriptionOldActiveRunAdoption(t *testing.T) {
 		Scenarios: []types.TestScenario{{Name: syntheticPrivateIntent, Result: types.ScenarioResultUntested, Reason: "Synthetic old record; no live product validation claimed"}},
 		Artifacts: []types.TestArtifact{{Label: syntheticPrivateIntent, Content: syntheticPrivateIntent, Path: filepath.Join(sctx.EvidenceDir, "private.log")}}}
 	evidence, _ := json.Marshal(fixture)
-	insertCompletedStep(t, sctx, types.StepTest, string(evidence), syntheticPrivateIntent)
+	testStep := insertCompletedStep(t, sctx, types.StepTest, string(evidence), "")
+	fixSummary := syntheticPrivateIntent
+	if _, err := sctx.DB.InsertStepRound(testStep.ID, 2, "auto_fix", nil, &fixSummary, 1); err != nil {
+		t.Fatal(err)
+	}
 	env, logFile := fakeGH(t, "")
 	sctx.Config.Test.Evidence.StoreInRepo, sctx.Config.Test.Evidence.AttachMedia = true, true
 	document := publicationAdoptionStep{types.StepDocument, func(ctx *pipeline.StepContext) (*pipeline.StepOutcome, error) {
