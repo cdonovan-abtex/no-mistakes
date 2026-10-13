@@ -171,6 +171,9 @@ func TestPublicDescriptionOldActiveRunAdoption(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("old owner continuation timed out")
 	}
+	if len(ag.calls) != 0 {
+		t.Fatalf("adopted public description invoked the PR drafter %d times", len(ag.calls))
+	}
 	body, err := os.ReadFile(envEntry(env, "FAKE_CLI_PR_BODY_FILE"))
 	if err != nil {
 		t.Fatal(err)

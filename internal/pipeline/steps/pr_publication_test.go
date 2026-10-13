@@ -74,12 +74,16 @@ func publicDescriptionContext(t *testing.T, mode string) (*pipeline.StepContext,
 // the bytes the adapter sent to gh --body-file -. The smoke runner additionally
 // denies all sockets to the compiled test process and its children.
 func TestPublicDescriptionForgeBoundary(t *testing.T) {
-	for _, mode := range []string{"normal-create", "normal-update", "fallback-error", "fallback-empty", "generated-evidence", "owned-update", "ci-restamp"} {
+	for _, mode := range []string{"normal-create", "normal-update", "fallback-error", "fallback-empty", "generated-evidence", "template-create", "template-update", "owned-update", "ci-restamp"} {
 		t.Run(mode, func(t *testing.T) {
 			sctx, ag := publicDescriptionContext(t, mode)
 			var existing string
-			if mode == "normal-update" || mode == "owned-update" || mode == "ci-restamp" {
+			if mode == "normal-update" || mode == "template-update" || mode == "owned-update" || mode == "ci-restamp" {
 				existing = "https://github.com/test/repo/pull/99"
+			}
+			if mode == "template-create" || mode == "template-update" || mode == "owned-update" {
+				sctx.Config.PR.Template = "unused-template.md"
+				sctx.Config.PR.TitleFormat = "{{.Branch}}: {{.Title}}"
 			}
 			env, logFile := fakeGH(t, existing)
 			sctx.Env = env
@@ -166,10 +170,8 @@ func TestPublicDescriptionForgeBoundary(t *testing.T) {
 			if mode == "ci-restamp" && (strings.Contains(string(body), `"live_validation"`) || !strings.Contains(string(body), strings.Repeat("ab", 20))) {
 				t.Fatal("restamp claimed stale live validation or wrong head")
 			}
-			for _, call := range ag.calls {
-				if strings.Contains(call.Prompt, "FULL_PRIVATE_SENTINEL") {
-					t.Fatal("PR drafter received private intent")
-				}
+			if len(ag.calls) != 0 {
+				t.Fatalf("pinned public description invoked the PR drafter %d times", len(ag.calls))
 			}
 			if !strings.Contains(userIntentPromptSection(sctx), syntheticPrivateIntent) {
 				t.Fatal("shared validation intent was changed")
