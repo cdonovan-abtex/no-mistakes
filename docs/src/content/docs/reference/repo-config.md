@@ -1074,7 +1074,7 @@ Recorded reason that opts this repository into letting the `PR must be raised vi
 | Type | `string` |
 | Default | Empty (off) |
 
-Off by default. When a Test step is approved while `commands.test` exited non-zero, no-mistakes records that as an override on the step and copies it onto the PR attestation as `steps[].override_reason`. The required check then refuses that attestation unless this field is a non-empty reason, which is copied into the attestation as `allow_test_command_override`.
+Off by default. When a Test step is approved while `commands.test` exited non-zero, no-mistakes records that as an override on the step. The required check refuses that exception unless this field is a non-empty reason. See the [attestation contract](/no-mistakes/reference/pipeline-steps/#pipeline-step-attestation) for its public encoding, including private-reason handling.
 
 Like `no_ci`, this field weakens a merge gate, so it is honored **only from the trusted default-branch copy** of `.no-mistakes.yaml`, regardless of `allow_repo_commands`. A contributor's pushed branch cannot waive the configured-test check that certifies it. The string is the recorded reason; whitespace-only is treated as unset.
 
@@ -1090,11 +1090,8 @@ Fields not set here inherit from global config and then the built-in defaults.
 | `test.evidence.dir` | `string` | Inherits from global (default `.no-mistakes/evidence`) |
 | `test.evidence.branch` | `string` | Inherits from global (default `no-mistakes/evidence`) |
 
-By default, test evidence is written to `<NM_HOME>/evidence/<run-id>`. Where it is stored locally and how long it is kept are global-only settings; see [`test.evidence`](/no-mistakes/reference/global-config/#testevidence).
-On GitHub.com/GHEC, supported image and video artifacts are uploaded to GitHub user-attachments when the PR is rendered unless `attach_media` is false and `store_in_repo` is also false.
-For GitHub repositories, set `store_in_repo: true` to also publish it to an orphan evidence branch in the code branch's push-target repository and link the artifacts from the PR body; evidence is never committed to the pushed branch, so it never reaches the default branch.
+Local storage and retention are global-only settings. See [`test.evidence`](/no-mistakes/reference/global-config/#testevidence) for storage, optional publication, privacy exceptions, provider support, limits, validation, and fail-closed behavior.
 `test.evidence.branch` is read ONLY from the trusted default-branch copy of this file, because it names a git ref the daemon pushes to; a pushed branch cannot redirect evidence commits.
-See [global config](/no-mistakes/reference/global-config/#testevidence) for provider support, limits, validation, and fail-closed behavior.
 
 ### providers.github.draft_pull_requests
 

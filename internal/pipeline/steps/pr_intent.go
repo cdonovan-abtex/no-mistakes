@@ -47,8 +47,9 @@ func runOmitsIntent(sctx *pipeline.StepContext) bool {
 // prDraftIntentPromptSection is the intent section for the PR-drafting turns
 // (ordinary narrative, title-only fallback, and repository-template
 // narrative). Under the caller-side omission it is empty, so those turns
-// draft from the diff and commit messages only and no intent text can reach
-// the public PR through a paraphrase. Every other step prompt keeps
+// draft from the diff and commit messages only, without paraphrasing the
+// withheld input. Other intent-derived evidence is not gated here; see
+// preparePRPublication for that boundary. Every other step prompt keeps
 // userIntentPromptSection unchanged.
 func prDraftIntentPromptSection(sctx *pipeline.StepContext) string {
 	if runOmitsIntent(sctx) {

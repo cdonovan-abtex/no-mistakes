@@ -1254,7 +1254,7 @@ The file is private local evidence, restricted to owner-only permissions on POSI
 ### intent
 
 Transcript-based user-intent extraction settings.
-When enabled and no intent was supplied directly for the run, no-mistakes can read recent local agent transcripts, match the session that produced the change, summarize the author's intent, and pass that summary to rebase, review, test, document, lint, CI auto-fix, repository gate repair, and PR prompts. For publication of the generated Intent section, see [`pr.publish_intent`](/no-mistakes/reference/repo-config/#prpublish_intent).
+When enabled and no intent was supplied directly for the run, no-mistakes can read recent local agent transcripts, match the session that produced the change, and summarize the author's intent. The [Intent step](/no-mistakes/reference/pipeline-steps/#intent) owns where that context is used. For publication of the generated Intent section, see [`pr.publish_intent`](/no-mistakes/reference/repo-config/#prpublish_intent).
 
 |      |          |
 | ---- | -------- |
