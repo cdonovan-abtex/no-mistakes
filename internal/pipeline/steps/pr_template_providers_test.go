@@ -1,10 +1,10 @@
 package steps
 
 import (
-	"context"
 	"strings"
 	"testing"
 
+	"github.com/kunchenguid/no-mistakes/internal/config"
 	"github.com/kunchenguid/no-mistakes/internal/db"
 	"github.com/kunchenguid/no-mistakes/internal/scm"
 	"github.com/kunchenguid/no-mistakes/internal/types"
@@ -51,7 +51,7 @@ func TestPRTemplateProviderCompositionUpdateAndRestamp(t *testing.T) {
 				t.Fatalf("author ownership changed: %+v %v", parts, err)
 			}
 			newHead := strings.Repeat("ab", 20)
-			if err := restampPRAttestation(context.Background(), host, &scm.PR{Number: "42"}, newHead, nil); err != nil {
+			if err := restampPRAttestationWithSteps(sctx, host, &scm.PR{Number: "42"}, newHead, nil); err != nil {
 				t.Fatal(err)
 			}
 			if got := parsePipelineAttestationForTest(t, host.body).HeadSHA; got != newHead {
@@ -84,7 +84,8 @@ func TestPRTemplateAzureRestampRefusesOverflowBeforeWrite(t *testing.T) {
 	for _, name := range []types.StepName{types.StepReview, types.StepTest, types.StepDocument, types.StepLint, types.StepPush, types.StepPR} {
 		steps = append(steps, &db.StepResult{StepName: name, Status: types.StepStatusCompleted})
 	}
-	if err := restampPRAttestationWithSteps(context.Background(), host, &scm.PR{Number: "42"}, strings.Repeat("ab", 20), steps, nil, pipelineAttestationPolicy{}); err == nil || !strings.Contains(err.Error(), "budget") {
+	sctx := newTestContextWithDBRecords(t, nil, t.TempDir(), testPipelineHeadSHA, testPipelineHeadSHA, config.Commands{})
+	if err := restampPRAttestationWithSteps(sctx, host, &scm.PR{Number: "42"}, strings.Repeat("ab", 20), steps); err == nil || !strings.Contains(err.Error(), "budget") {
 		t.Fatalf("overflow not refused: %v", err)
 	}
 	if host.updates != 0 || host.body != content.Body {

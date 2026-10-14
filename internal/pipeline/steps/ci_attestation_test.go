@@ -229,11 +229,12 @@ func TestRestampPRAttestation_RebindsExistingAndSkipsMissing(t *testing.T) {
 	originalHead := testPipelineHeadSHA
 	repairHead := strings.Repeat("cd", 20)
 	pr := &scm.PR{Number: "42", URL: "https://github.com/test/repo/pull/42"}
+	sctx := newTestContextWithDBRecords(t, nil, t.TempDir(), originalHead, originalHead, config.Commands{})
 
 	t.Run("existing_attestation_is_rebound", func(t *testing.T) {
 		t.Parallel()
 		host := &attestationTestHost{title: "fix: ci", body: compliantPipelineBody(t, originalHead)}
-		if err := restampPRAttestation(context.Background(), host, pr, repairHead, nil); err != nil {
+		if err := restampPRAttestationWithSteps(sctx, host, pr, repairHead, nil); err != nil {
 			t.Fatal(err)
 		}
 		if host.updates != 1 {
@@ -247,7 +248,7 @@ func TestRestampPRAttestation_RebindsExistingAndSkipsMissing(t *testing.T) {
 		}
 
 		secondHead := strings.Repeat("ef", 20)
-		if err := restampPRAttestation(context.Background(), host, pr, secondHead, nil); err != nil {
+		if err := restampPRAttestationWithSteps(sctx, host, pr, secondHead, nil); err != nil {
 			t.Fatal(err)
 		}
 		if host.updates != 2 {
@@ -268,7 +269,7 @@ func TestRestampPRAttestation_RebindsExistingAndSkipsMissing(t *testing.T) {
 		t.Parallel()
 		const foreign = "a regular pull request with no pipeline section"
 		host := &attestationTestHost{title: "feat: hand rolled", body: foreign}
-		if err := restampPRAttestation(context.Background(), host, pr, repairHead, nil); err != nil {
+		if err := restampPRAttestationWithSteps(sctx, host, pr, repairHead, nil); err != nil {
 			t.Fatal(err)
 		}
 		if host.updates != 0 {
@@ -295,7 +296,8 @@ func TestRestampPRAttestation_PreservesContentEditedWhilePreparingRewrite(t *tes
 		bodyAfterFirstRead: concurrentBody,
 	}
 
-	if err := restampPRAttestation(context.Background(), host, &scm.PR{Number: "42"}, repairHead, nil); err != nil {
+	sctx := newTestContextWithDBRecords(t, nil, t.TempDir(), originalHead, originalHead, config.Commands{})
+	if err := restampPRAttestationWithSteps(sctx, host, &scm.PR{Number: "42"}, repairHead, nil); err != nil {
 		t.Fatal(err)
 	}
 	if host.reads < 4 {
@@ -322,6 +324,7 @@ func TestRestampPRAttestation_RetriesAndRequiresSettlement(t *testing.T) {
 	t.Parallel()
 	pr := &scm.PR{Number: "42", URL: "https://github.com/test/repo/pull/42"}
 	repairHead := strings.Repeat("12", 20)
+	sctx := newTestContextWithDBRecords(t, nil, t.TempDir(), testPipelineHeadSHA, testPipelineHeadSHA, config.Commands{})
 
 	t.Run("transient_failure_settles", func(t *testing.T) {
 		host := &attestationTestHost{
@@ -329,7 +332,7 @@ func TestRestampPRAttestation_RetriesAndRequiresSettlement(t *testing.T) {
 			body:        compliantPipelineBody(t, testPipelineHeadSHA),
 			failUpdates: 2,
 		}
-		if err := restampPRAttestation(context.Background(), host, pr, repairHead, nil); err != nil {
+		if err := restampPRAttestationWithSteps(sctx, host, pr, repairHead, nil); err != nil {
 			t.Fatal(err)
 		}
 		if host.updates != 3 {
@@ -346,7 +349,7 @@ func TestRestampPRAttestation_RetriesAndRequiresSettlement(t *testing.T) {
 			body:        compliantPipelineBody(t, testPipelineHeadSHA),
 			failUpdates: 3,
 		}
-		err := restampPRAttestation(context.Background(), host, pr, repairHead, nil)
+		err := restampPRAttestationWithSteps(sctx, host, pr, repairHead, nil)
 		if err == nil || !strings.Contains(err.Error(), "failed after 3 attempts") {
 			t.Fatalf("restamp error = %v, want exhausted settlement error", err)
 		}
@@ -365,9 +368,9 @@ func TestRestampPRAttestation_MissingReaderIsSkipped(t *testing.T) {
 	t.Parallel()
 	pr := &scm.PR{Number: "42", URL: "https://bitbucket.org/test/repo/pull-requests/42"}
 	var logs []string
-	err := restampPRAttestation(context.Background(), &readerlessHost{}, pr, strings.Repeat("ab", 20), func(s string) {
-		logs = append(logs, s)
-	})
+	sctx := newTestContextWithDBRecords(t, nil, t.TempDir(), testPipelineHeadSHA, testPipelineHeadSHA, config.Commands{})
+	sctx.Log = func(s string) { logs = append(logs, s) }
+	err := restampPRAttestationWithSteps(sctx, &readerlessHost{}, pr, strings.Repeat("ab", 20), nil)
 	if err != nil {
 		t.Fatalf("missing reader must skip, not fail: %v", err)
 	}

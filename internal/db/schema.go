@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS runs (
     omit_intent          INTEGER NOT NULL DEFAULT 0,
     pi_profile           TEXT,
     verification_plan    TEXT,
+    public_description   TEXT,
     created_at           INTEGER NOT NULL,
     updated_at           INTEGER NOT NULL
 );
@@ -377,6 +378,10 @@ var migrationStatements = []string{
 	// a late --closes can still reach the Issues section; non-NULL closes that window
 	// (see UpdateRunClosingIssueRefs / ClaimClosingIssueRefsForPRBody).
 	`ALTER TABLE runs ADD COLUMN closing_issue_refs_locked_at INTEGER`,
+	// Independently authored public prose is immutable, not regenerated from
+	// private validation intent when a run resumes or changes head.
+	`ALTER TABLE runs ADD COLUMN public_description TEXT`,
+	`CREATE TRIGGER IF NOT EXISTS runs_public_description_immutable BEFORE UPDATE OF public_description ON runs WHEN OLD.public_description IS NOT NULL AND NEW.public_description IS NOT OLD.public_description BEGIN SELECT RAISE(ABORT, 'run public description is immutable'); END`,
 	// Set with a CI repair's carried review approval and cleared by the next
 	// publication (UpdateRunHeadSHAWithCarriedReview / UpdateRunPublication).
 	`ALTER TABLE runs ADD COLUMN ci_test_restart_pending INTEGER NOT NULL DEFAULT 0`,

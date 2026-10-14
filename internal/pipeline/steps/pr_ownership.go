@@ -151,7 +151,8 @@ func validateOwnedPRBudget(body string, bodyLimit int) error {
 
 // updateOwnedPR re-reads before the full-body write and verifies afterwards.
 // This is NOT compare-and-swap: providers expose full-body writes. Detected
-// pre-write edits are merged from their latest version (bounded); a write error
+// pre-write edits are re-read (bounded); ordinary runs preserve the latest
+// author narrative, while pinned runs replace it. A write error
 // or post-write divergence fails without replaying a potentially applied write.
 func updateOwnedPR(sctx *pipeline.StepContext, host scm.Host, pr *scm.PR, initial scm.PRContent, title, emptyNarrative, appendix string, bodyLimit int) error {
 	reader, ok := host.(scm.PRContentReader)
@@ -164,13 +165,20 @@ func updateOwnedPR(sctx *pipeline.StepContext, host scm.Host, pr *scm.PR, initia
 		if err != nil {
 			return err
 		}
-		if current.Body == "" && !parts.managed {
-			parts.before = emptyNarrative
+		var content prContent
+		if hasPublicDescription(sctx) {
+			var ready scm.PRContent
+			ready, err = preparePRPublication(sctx, scm.PRContent{}, publicationHead(sctx), bodyLimit)
+			content = prContent(ready)
+		} else {
+			if current.Body == "" && !parts.managed {
+				parts.before = emptyNarrative
+			}
+			// The author text around the appendix is kept verbatim, so only
+			// references it does not already close are added.
+			authorText := parts.before + "\n" + parts.after
+			content, err = composeOwnedPRContent(parts, title, appendIssuesSection(appendix, issuesSection(sctx, authorText)), bodyLimit)
 		}
-		// The author text around the appendix is kept verbatim, so only
-		// references it does not already close are added.
-		authorText := parts.before + "\n" + parts.after
-		content, err := composeOwnedPRContent(parts, title, appendIssuesSection(appendix, issuesSection(sctx, authorText)), bodyLimit)
 		if err != nil {
 			return err
 		}
@@ -186,7 +194,7 @@ func updateOwnedPR(sctx *pipeline.StepContext, host scm.Host, pr *scm.PR, initia
 			continue
 		}
 		if content.Body != current.Body || content.Title != "" {
-			if _, err := host.UpdatePR(sctx.Ctx, pr, scm.PRContent(content)); err != nil {
+			if _, err := updatePRWithPublication(sctx, host, pr, scm.PRContent(content)); err != nil {
 				return fmt.Errorf("update templated PR: %w", err)
 			}
 		}

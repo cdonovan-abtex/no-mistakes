@@ -260,6 +260,8 @@ For example, commit this template and the configuration to the default branch:
 - [ ] Maintainer approves rollout
 ```
 
+The template behavior below applies to ordinary runs. Runs with an [independent public description](/no-mistakes/reference/cli/#independent-public-description) use that contract instead, including for an already owned body.
+
 On a new or empty PR, the agent makes a best effort to follow template instructions and fill applicable sections from the final branch delta. Only top-level ATX `#` headings outside fenced examples are structurally required, with their trimmed text and order retained. Lower-level headings (`##`–`######`) and task lines are editable: the model may remove inapplicable sections/options, select supported choices, and fill checkbox rationale placeholders. It is instructed not to invent behavior/tests or falsely claim human signoff; human approval boxes must not be marked complete. Subordinate completion and factual correctness are best effort, not mechanically guaranteed. No fixed `What Changed` heading is imposed. This is ordinary Markdown, not a variable/loop/plugin language, and there is no implicit template discovery. Template headings such as `Testing` remain author narrative; the generated appendix follows that narrative. [`pr.appendix`](#prappendix) chooses whether its recorded evidence is expanded, folded, or reduced to a risk line and the attestation. Extra evidence headings are intentional in the default `full` mode: this does **not** satisfy a policy requiring only the template's headings or bytes. `collapsed` and `minimal` keep the template as the visible body.
 
 The path is read as a literal Git tree entry, never through the pushed worktree filesystem. Absolute/Windows paths, traversal, ref expressions, symlinks, submodules, missing/unreadable files, empty/non-UTF-8/NUL-containing content, and files over 16 KiB fail rather than silently replacing the template with a generic summary. Raw no-mistakes ownership/attestation markers are reserved. Invalid agent output, missing/changed/reordered required H1 headings, and agent failure also fail template drafting rather than using the ordinary fallback. Templates without H1 headings have no structural heading requirements; they are not malformed for that reason. Matching retains the existing ordered-subsequence contract: extra headings are allowed. The structural guard is not a full Markdown parser, a visibility/uniqueness proof, or a template policy engine; it does not enforce subordinate sections, checkbox states, or placeholder completion.
@@ -292,13 +294,13 @@ Control publication of the **generated `Intent` section**, independently of inte
 
 `false` suppresses that section in ordinary drafting, fallback output, and template appendices. It works without `pr.template` and does not otherwise enable template mode. It never removes full intent from review or PR-drafting context, changes evidence/attestation policy, or erases author-written sections named `Intent`. Unconfigured defaults remain unchanged.
 
-A contributor can keep the section off for their own runs without touching this repository policy: `axi run --no-publish-intent` records a tighten-only omission on the run, and an operator can set the global `intent.publish_intent: false` default. Both compose with this field and can only reduce publication: the trusted repository policy is the ceiling, and a caller can never publish intent on a repository whose trusted config disabled it. Neither signal changes what review, test, document, lint, or CI auto-fix prompts receive. The caller-side omission goes one step further than this repository policy: the PR-drafting turns (ordinary narrative, title-only fallback, and repository-template narrative) receive no intent text at all and draft from the diff and commit messages only, so no paraphrase of the withheld intent can reach the public PR. The intent is withheld, never scanned for: there is no output filter.
+A contributor can keep the section off for their own runs without touching this repository policy: `axi run --no-publish-intent` records a tighten-only omission on the run, and an operator can set the global `intent.publish_intent: false` default. Both compose with this field and can only reduce publication: the trusted repository policy is the ceiling, and a caller can never publish intent on a repository whose trusted config disabled it. Neither signal changes what review, test, document, lint, or CI auto-fix prompts receive. The caller-side omission goes one step further than this repository policy: the PR-drafting turns (ordinary narrative, title-only fallback, and repository-template narrative) receive no intent text at all and draft from the diff and commit messages only, so those drafting turns cannot paraphrase the withheld input. The intent is withheld, never scanned for: there is no output filter.
 
-This is not a privacy filter: generated narrative and other evidence can still contain sensitive information, and LLM drafting is not a confidentiality guarantee. No caller-written public-body override is introduced by this setting.
+This is not a privacy filter: generated narrative and other evidence can still contain sensitive information, and LLM drafting is not a confidentiality guarantee. For a separate publication boundary, see the [independent public description contract](/no-mistakes/reference/cli/#independent-public-description).
 
 ### pr.appendix
 
-Choose how much of the generated Risk, Testing, and Pipeline tail is visible after the narrative. Intent publication stays under [`pr.publish_intent`](#prpublish_intent).
+Choose how much of the generated Risk, Testing, and Pipeline tail is visible after the narrative in ordinary runs; [independent public descriptions](/no-mistakes/reference/cli/#independent-public-description) use their own publication contract. Intent publication stays under [`pr.publish_intent`](#prpublish_intent).
 
 | | |
 | --- | --- |
@@ -322,7 +324,7 @@ pr:
 
 ### pr.title_format
 
-Configure the title shape no-mistakes applies to newly created and updated pull requests.
+Configure the title shape no-mistakes applies to newly created and updated pull requests in ordinary runs. Runs with an [independent public description](/no-mistakes/reference/cli/#independent-public-description) use that contract instead.
 
 | | |
 | --- | --- |
@@ -1072,7 +1074,7 @@ Recorded reason that opts this repository into letting the `PR must be raised vi
 | Type | `string` |
 | Default | Empty (off) |
 
-Off by default. When a Test step is approved while `commands.test` exited non-zero, no-mistakes records that as an override on the step and copies it onto the PR attestation as `steps[].override_reason`. The required check then refuses that attestation unless this field is a non-empty reason, which is copied into the attestation as `allow_test_command_override`.
+Off by default. When a Test step is approved while `commands.test` exited non-zero, no-mistakes records that as an override on the step. The required check refuses that exception unless this field is a non-empty reason. See the [attestation contract](/no-mistakes/reference/pipeline-steps/#pipeline-step-attestation) for its public encoding, including private-reason handling.
 
 Like `no_ci`, this field weakens a merge gate, so it is honored **only from the trusted default-branch copy** of `.no-mistakes.yaml`, regardless of `allow_repo_commands`. A contributor's pushed branch cannot waive the configured-test check that certifies it. The string is the recorded reason; whitespace-only is treated as unset.
 
@@ -1088,11 +1090,8 @@ Fields not set here inherit from global config and then the built-in defaults.
 | `test.evidence.dir` | `string` | Inherits from global (default `.no-mistakes/evidence`) |
 | `test.evidence.branch` | `string` | Inherits from global (default `no-mistakes/evidence`) |
 
-By default, test evidence is written to `<NM_HOME>/evidence/<run-id>`. Where it is stored locally and how long it is kept are global-only settings; see [`test.evidence`](/no-mistakes/reference/global-config/#testevidence).
-On GitHub.com/GHEC, supported image and video artifacts are uploaded to GitHub user-attachments when the PR is rendered unless `attach_media` is false and `store_in_repo` is also false.
-For GitHub repositories, set `store_in_repo: true` to also publish it to an orphan evidence branch in the code branch's push-target repository and link the artifacts from the PR body; evidence is never committed to the pushed branch, so it never reaches the default branch.
+Local storage and retention are global-only settings. See [`test.evidence`](/no-mistakes/reference/global-config/#testevidence) for storage, optional publication, privacy exceptions, provider support, limits, validation, and fail-closed behavior.
 `test.evidence.branch` is read ONLY from the trusted default-branch copy of this file, because it names a git ref the daemon pushes to; a pushed branch cannot redirect evidence commits.
-See [global config](/no-mistakes/reference/global-config/#testevidence) for provider support, limits, validation, and fail-closed behavior.
 
 ### providers.github.draft_pull_requests
 

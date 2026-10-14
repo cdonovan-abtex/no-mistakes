@@ -1015,6 +1015,16 @@ func (e *Executor) autoFixLimit(stepName types.StepName) int {
 // and any execution error.
 func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult, run *db.Run, repo *db.Repo, workDir, logDir string, state stepExecutionState) (bool, types.StepName, error) {
 	stepName := step.Name()
+	if stepName.Order() >= types.StepPush.Order() {
+		// A one-time public-description adoption may have tightened the
+		// boundary while an earlier gate was parked. Reload ONLY that pin;
+		// the original intent/head/session and all validation state stay put.
+		recorded, err := e.db.GetRun(run.ID)
+		if err != nil || recorded == nil {
+			return false, "", fmt.Errorf("load publication pin for run %s: %v", run.ID, err)
+		}
+		run.PublicDescription = recorded.PublicDescription
+	}
 	logPath := filepath.Join(logDir, string(stepName)+".log")
 	finalExitCode := 0
 	autoFixLimit := e.autoFixLimit(stepName)

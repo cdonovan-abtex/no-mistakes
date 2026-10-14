@@ -1171,7 +1171,7 @@ repository_overrides:
 ```
 
 `pr.template` selects a repository-relative file, never local template contents. It uses the same [path and file validation](/no-mistakes/reference/repo-config/#prtemplate) as the repository setting, and its bytes are read only from the pinned trusted default-branch tree, never from the pushed branch or worktree.
-`pr.appendix` accepts `full`, `collapsed`, or `minimal` and can be set with or without `pr.template`; it uses the same [appendix and attestation behavior](/no-mistakes/reference/repo-config/#prappendix) as the repository setting. When template mode is active, author-edited narrative is preserved on later updates.
+`pr.appendix` accepts `full`, `collapsed`, or `minimal` and can be set with or without `pr.template`; it uses the same [appendix and attestation behavior](/no-mistakes/reference/repo-config/#prappendix) as the repository setting.
 For each field, a non-empty trusted repository value wins over the matching machine-local value. Leaving either unset retains existing behavior; an unset appendix defaults to `full`.
 These fields are available only under `repository_overrides`, not as machine-wide PR settings. `pr.publish_intent` remains trusted-repository-only.
 
@@ -1254,7 +1254,7 @@ The file is private local evidence, restricted to owner-only permissions on POSI
 ### intent
 
 Transcript-based user-intent extraction settings.
-When enabled and no intent was supplied directly for the run, no-mistakes can read recent local agent transcripts, match the session that produced the change, summarize the author's intent, and pass that summary to rebase, review, test, document, lint, CI auto-fix, repository gate repair, and PR prompts. For publication of the generated Intent section, see [`pr.publish_intent`](/no-mistakes/reference/repo-config/#prpublish_intent).
+When enabled and no intent was supplied directly for the run, no-mistakes can read recent local agent transcripts, match the session that produced the change, and summarize the author's intent. The [Intent step](/no-mistakes/reference/pipeline-steps/#intent) owns where that context is used. For publication of the generated Intent section, see [`pr.publish_intent`](/no-mistakes/reference/repo-config/#prpublish_intent).
 
 |      |          |
 | ---- | -------- |
@@ -1283,7 +1283,7 @@ Otherwise, accepted candidates are ranked by confidence, which combines the raw 
 ### test.evidence
 
 Test-step evidence storage settings.
-By default, evidence artifacts are written to `<NM_HOME>/evidence/<run-id>`. On GitHub.com/GHEC, supported image and video artifacts are also uploaded when the PR is rendered; see `attach_media` below.
+By default, evidence artifacts are written to `<NM_HOME>/evidence/<run-id>`. Runs with an [independent public description](/no-mistakes/reference/cli/#independent-public-description) keep artifacts local regardless of the publication settings below. The upload and evidence-branch behavior below applies to ordinary runs.
 
 |      |          |
 | ---- | -------- |

@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 
 	"github.com/kunchenguid/no-mistakes/internal/agentcfg"
+	"github.com/kunchenguid/no-mistakes/internal/publicdescription"
 	"github.com/kunchenguid/no-mistakes/internal/types"
 	"github.com/kunchenguid/no-mistakes/internal/verificationplan"
 )
@@ -17,6 +18,8 @@ const (
 	MethodPushReceived              = "push_received"
 	MethodResolvePiProfile          = "resolve_pi_profile"
 	MethodProbeOmitIntent           = "probe_omit_intent"
+	MethodProbePublicDescription    = "probe_public_description"
+	MethodAdoptPublicDescription    = "adopt_public_description"
 	MethodReleaseVerificationPlan   = "release_verification_plan"
 	MethodCaptureVerificationPlan   = "capture_verification_plan"
 	MethodStartFreshRun             = "start_fresh_run"
@@ -80,8 +83,9 @@ func (e *RPCError) Error() string { return e.Message }
 // intent from local transcripts. LaunchNonce and ValidationGeneration together
 // opt into a nonce-bound launch proof.
 type PushReceivedParams struct {
-	VerificationPlanID string              `json:"verification_plan_id,omitempty"`
-	PiProfile          *agentcfg.PiProfile `json:"pi_profile,omitempty"`
+	PublicDescriptionPath string              `json:"public_description_path,omitempty"`
+	VerificationPlanID    string              `json:"verification_plan_id,omitempty"`
+	PiProfile             *agentcfg.PiProfile `json:"pi_profile,omitempty"`
 	// Gate is the absolute path to the gate bare repo.
 	Gate                 string           `json:"gate"`
 	Ref                  string           `json:"ref"`
@@ -110,8 +114,9 @@ type PushReceivedParams struct {
 // branch head. The daemon checks the gate while holding the branch lock, so a
 // caller never receives a proof for a drifting creation context.
 type StartFreshRunParams struct {
-	VerificationPlanID string              `json:"verification_plan_id,omitempty"`
-	PiProfile          *agentcfg.PiProfile `json:"pi_profile,omitempty"`
+	PublicDescriptionPath string              `json:"public_description_path,omitempty"`
+	VerificationPlanID    string              `json:"verification_plan_id,omitempty"`
+	PiProfile             *agentcfg.PiProfile `json:"pi_profile,omitempty"`
 
 	RepoID               string           `json:"repo_id"`
 	Branch               string           `json:"branch"`
@@ -142,6 +147,22 @@ type ReleaseVerificationPlanParams struct {
 	HeadSHA   string `json:"head_sha"`
 }
 
+// AdoptPublicDescriptionParams tightens only the publication boundary of the
+// caller branch's exact existing parked run. It carries no validation intent.
+type AdoptPublicDescriptionParams struct {
+	RepoID           string          `json:"repo_id"`
+	Branch           string          `json:"branch"`
+	RunID            string          `json:"run_id"`
+	SubmittedHeadSHA string          `json:"submitted_head_sha"`
+	Description      json.RawMessage `json:"description"`
+}
+
+// ProbePublicDescriptionParams checks both the daemon and the registered
+// gate's notification contract before private intent can enter a new launch.
+type ProbePublicDescriptionParams struct {
+	RepoID string `json:"repo_id"`
+}
+
 // ProbeOmitIntentParams is the empty request for MethodProbeOmitIntent.
 type ProbeOmitIntentParams struct{}
 
@@ -158,7 +179,8 @@ type ProbeOmitIntentResult struct {
 // ClaimLaunchReceiptParams identifies one exact opaque receipt binding.
 // Generic run/status surfaces never expose launch bindings or intent digests.
 type ClaimLaunchReceiptParams struct {
-	PiProfile *agentcfg.PiProfile `json:"pi_profile,omitempty"`
+	PublicDescriptionPath string              `json:"public_description_path,omitempty"`
+	PiProfile             *agentcfg.PiProfile `json:"pi_profile,omitempty"`
 
 	RepoID               string `json:"repo_id"`
 	Branch               string `json:"branch"`
@@ -221,8 +243,9 @@ type GetActiveRunParams struct {
 // leaves the new run to perform fresh inference.
 // ClosingIssueRefs are merged with the selected run's persisted references.
 type RerunParams struct {
-	VerificationPlanID string              `json:"verification_plan_id,omitempty"`
-	PiProfile          *agentcfg.PiProfile `json:"pi_profile,omitempty"`
+	PublicDescriptionPath string              `json:"public_description_path,omitempty"`
+	VerificationPlanID    string              `json:"verification_plan_id,omitempty"`
+	PiProfile             *agentcfg.PiProfile `json:"pi_profile,omitempty"`
 
 	RepoID        string           `json:"repo_id"`
 	Branch        string           `json:"branch"`
@@ -467,8 +490,9 @@ type ShutdownResult struct {
 
 // RunInfo is the IPC representation of a pipeline run.
 type RunInfo struct {
-	VerificationPlan *verificationplan.Snapshot `json:"verification_plan"`
-	PiProfile        *agentcfg.PiProfile        `json:"pi_profile,omitempty"`
+	VerificationPlan  *verificationplan.Snapshot  `json:"verification_plan"`
+	PublicDescription *publicdescription.Snapshot `json:"public_description,omitempty"`
+	PiProfile         *agentcfg.PiProfile         `json:"pi_profile,omitempty"`
 
 	ID               string          `json:"id"`
 	RepoID           string          `json:"repo_id"`

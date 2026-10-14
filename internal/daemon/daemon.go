@@ -27,6 +27,7 @@ import (
 	"github.com/kunchenguid/no-mistakes/internal/paths"
 	"github.com/kunchenguid/no-mistakes/internal/pipeline"
 	"github.com/kunchenguid/no-mistakes/internal/procreap"
+	"github.com/kunchenguid/no-mistakes/internal/publicdescription"
 	"github.com/kunchenguid/no-mistakes/internal/shellenv"
 	"github.com/kunchenguid/no-mistakes/internal/telemetry"
 	"github.com/kunchenguid/no-mistakes/internal/types"
@@ -1338,12 +1339,15 @@ func registerHandlers(srv *ipc.Server, mgr *RunManager, d *db.DB, shutdown func(
 		if err != nil {
 			return nil, err
 		}
-		run, claimed, err := d.ClaimLaunchReceipt(p.RepoID, p.Branch, p.LaunchNonce, p.SubmittedHeadSHA, p.ValidationGeneration, p.IntentDigest, prBaseBranch, p.OmitIntent, p.PiProfile)
+		run, claimed, err := d.ClaimLaunchReceipt(p.RepoID, p.Branch, p.LaunchNonce, p.SubmittedHeadSHA, p.ValidationGeneration, p.IntentDigest, prBaseBranch, p.OmitIntent, p.PublicDescriptionPath, p.PiProfile)
 		if err != nil {
 			return nil, fmt.Errorf("claim launch receipt: %w", err)
 		}
 		if run == nil {
 			return &ipc.ClaimLaunchReceiptResult{}, nil
+		}
+		if !run.PublicDescription.MatchesRequest(p.PublicDescriptionPath) {
+			return nil, fmt.Errorf("public description cannot replace an existing run pin")
 		}
 		if !run.PiProfile.Matches(p.PiProfile) {
 			return nil, fmt.Errorf("conflicting launch_nonce: Pi profile differs from run pin")
@@ -1367,6 +1371,42 @@ func registerHandlers(srv *ipc.Server, mgr *RunManager, d *db.DB, shutdown func(
 
 	// Capability probe for --no-publish-intent: see ipc.ProbeOmitIntentResult.
 	srv.Handle(ipc.MethodProbeOmitIntent, func(context.Context, json.RawMessage) (interface{}, error) {
+		return &ipc.ProbeOmitIntentResult{OK: true}, nil
+	})
+
+	// A distinct probe fails closed against older daemons that would silently
+	// ignore the public/private boundary launch field.
+	srv.Handle(ipc.MethodProbePublicDescription, func(_ context.Context, params json.RawMessage) (interface{}, error) {
+		var p ipc.ProbePublicDescriptionParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		repo, err := d.GetRepo(p.RepoID)
+		if err != nil {
+			return nil, err
+		}
+		if repo == nil {
+			return nil, fmt.Errorf("unknown repository")
+		}
+		// An older notification binary silently ignores unknown push options.
+		// Do not authorize a separated launch unless the managed hook invokes
+		// this daemon's executable/notification contract. This probe never
+		// refreshes shared hooks or changes an existing run.
+		hook, err := os.ReadFile(filepath.Join(mgr.paths.RepoDir(repo.ID), "hooks", "post-receive"))
+		return &ipc.ProbeOmitIntentResult{OK: err == nil && string(hook) == git.PostReceiveHookScript()}, nil
+	})
+
+	srv.Handle(ipc.MethodAdoptPublicDescription, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+		if err := refuseNested(ctx, false); err != nil {
+			return nil, err
+		}
+		var p ipc.AdoptPublicDescriptionParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		if err := mgr.HandleAdoptPublicDescription(&p); err != nil {
+			return nil, err
+		}
 		return &ipc.ProbeOmitIntentResult{OK: true}, nil
 	})
 
@@ -1446,7 +1486,7 @@ func registerHandlers(srv *ipc.Server, mgr *RunManager, d *db.DB, shutdown func(
 		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, fmt.Errorf("invalid params: %w", err)
 		}
-		runID, err := mgr.HandleRerun(ctx, p.RepoID, p.Branch, p.PreviousRunID, p.SkipSteps, p.Intent, p.PRBaseBranch, p.OmitIntent, p.CallerHeadSHA, p.VerificationPlanID, p.ClosingIssueRefs, p.PiProfile)
+		runID, err := mgr.HandleRerun(publicdescription.WithRequest(ctx, p.PublicDescriptionPath), p.RepoID, p.Branch, p.PreviousRunID, p.SkipSteps, p.Intent, p.PRBaseBranch, p.OmitIntent, p.CallerHeadSHA, p.VerificationPlanID, p.ClosingIssueRefs, p.PiProfile)
 		if err != nil {
 			return nil, err
 		}
@@ -1606,6 +1646,7 @@ func runToInfo(d *db.DB, r *db.Run, steps []*db.StepResult) *ipc.RunInfo {
 		OmitIntent:         r.OmitIntent,
 		PiProfile:          r.PiProfile,
 		VerificationPlan:   r.VerificationPlan,
+		PublicDescription:  r.PublicDescription,
 		AwaitingAgent:      r.AwaitingAgentSince != nil,
 		AwaitingAgentSince: r.AwaitingAgentSince,
 		CreatedAt:          r.CreatedAt,

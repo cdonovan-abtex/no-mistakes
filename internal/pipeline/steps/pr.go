@@ -148,7 +148,8 @@ func (s *PRStep) Execute(sctx *pipeline.StepContext) (*pipeline.StepOutcome, err
 		sctx.Log(fmt.Sprintf("pull request already exists: %s, updating...", describePR(existing)))
 		updated := existing
 		// Removing pr.template must not switch an already owned body back to
-		// destructive drafting. Its live author narrative still wins.
+		// destructive drafting on ordinary runs. A pinned description replaces
+		// the narrative while retaining ownership and race checks.
 		if template != "" || hasPRAppendixMarkers(live.Body) {
 			if _, err := parsePROwnedBody(live.Body); err != nil {
 				return nil, err
@@ -162,15 +163,18 @@ func (s *PRStep) Execute(sctx *pipeline.StepContext) (*pipeline.StepOutcome, err
 				}
 				emptyNarrative = neutralizeAttestationMarkers(provider, draft.Body)
 				title = draft.Title
-			} else if sctx.Config != nil && sctx.Config.PR.TitleFormat != "" {
+			} else if !hasPublicDescription(sctx) && sctx.Config != nil && sctx.Config.PR.TitleFormat != "" {
 				title, err = s.draftConfiguredPRTitle(sctx, branch, baseBranch, baseSHA)
 				if err != nil {
 					return nil, err
 				}
 			}
-			appendix, err := s.buildPRAppendix(sctx, provider)
-			if err != nil {
-				return nil, err
+			var appendix string
+			if !hasPublicDescription(sctx) {
+				appendix, err = s.buildPRAppendix(sctx, provider)
+				if err != nil {
+					return nil, err
+				}
 			}
 			if err := retargetExistingPRIfNeeded(sctx, host, existing, runPRBaseBranch(sctx)); err != nil {
 				return nil, err
@@ -189,7 +193,7 @@ func (s *PRStep) Execute(sctx *pipeline.StepContext) (*pipeline.StepOutcome, err
 			if err := retargetExistingPRIfNeeded(sctx, host, existing, runPRBaseBranch(sctx)); err != nil {
 				return nil, err
 			}
-			updated, err = host.UpdatePR(ctx, existing, scm.PRContent(content))
+			updated, err = updatePRWithPublication(sctx, host, existing, scm.PRContent(content))
 			if err != nil {
 				// A revalidation cycle may already have pushed a repaired head. Its
 				// attestation is part of delivery, so CI must not run after a failed
@@ -220,7 +224,7 @@ func (s *PRStep) Execute(sctx *pipeline.StepContext) (*pipeline.StepOutcome, err
 		return nil, err
 	}
 	sctx.Log("creating pull request...")
-	created, err := host.CreatePR(ctx, branch, baseBranch, scm.PRContent(content))
+	created, err := createPRWithPublication(sctx, host, branch, baseBranch, scm.PRContent(content))
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +409,8 @@ func describePR(pr *scm.PR) string {
 	return ""
 }
 
-// buildPRContent drafts the pull request title and body and then applies the
+// buildPRContent composes pinned public material directly, or drafts an
+// ordinary pull request title and body and then applies the
 // publication redaction boundary. New template bodies and author-preserving
 // updates use composeOwnedPRContent, which calls the same redactPRContent owner
 // before stamping its integrity guard. This covers every source: agent-authored
@@ -417,6 +422,10 @@ func describePR(pr *scm.PR) string {
 // next rendering path somebody adds is not going to have one; a boundary scrub
 // covers sources nobody has written yet.
 func (s *PRStep) buildPRContent(sctx *pipeline.StepContext, branch, baseBranch, baseSHA string, provider scm.Provider, bodyLimit int) (prContent, error) {
+	if hasPublicDescription(sctx) {
+		content, err := preparePRPublication(sctx, scm.PRContent{}, sctx.Run.HeadSHA, bodyLimit)
+		return prContent(content), err
+	}
 	if name := configuredPRTemplate(sctx); name != "" {
 		if !supportsPRTemplates(provider) {
 			return prContent{}, fmt.Errorf("pr.template is unsupported by this provider")
