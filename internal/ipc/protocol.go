@@ -147,8 +147,6 @@ type ReleaseVerificationPlanParams struct {
 	HeadSHA   string `json:"head_sha"`
 }
 
-// ProbePublicDescriptionParams checks both the daemon and the registered
-// gate's notification contract before private intent can enter a new launch.
 // AdoptPublicDescriptionParams tightens only the publication boundary of the
 // caller branch's exact existing parked run. It carries no validation intent.
 type AdoptPublicDescriptionParams struct {
@@ -159,6 +157,8 @@ type AdoptPublicDescriptionParams struct {
 	Description      json.RawMessage `json:"description"`
 }
 
+// ProbePublicDescriptionParams checks both the daemon and the registered
+// gate's notification contract before private intent can enter a new launch.
 type ProbePublicDescriptionParams struct {
 	RepoID string `json:"repo_id"`
 }

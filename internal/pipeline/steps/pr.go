@@ -148,7 +148,8 @@ func (s *PRStep) Execute(sctx *pipeline.StepContext) (*pipeline.StepOutcome, err
 		sctx.Log(fmt.Sprintf("pull request already exists: %s, updating...", describePR(existing)))
 		updated := existing
 		// Removing pr.template must not switch an already owned body back to
-		// destructive drafting. Its live author narrative still wins.
+		// destructive drafting on ordinary runs. A pinned description replaces
+		// the narrative while retaining ownership and race checks.
 		if template != "" || hasPRAppendixMarkers(live.Body) {
 			if _, err := parsePROwnedBody(live.Body); err != nil {
 				return nil, err
@@ -408,7 +409,8 @@ func describePR(pr *scm.PR) string {
 	return ""
 }
 
-// buildPRContent drafts the pull request title and body and then applies the
+// buildPRContent composes pinned public material directly, or drafts an
+// ordinary pull request title and body and then applies the
 // publication redaction boundary. New template bodies and author-preserving
 // updates use composeOwnedPRContent, which calls the same redactPRContent owner
 // before stamping its integrity guard. This covers every source: agent-authored

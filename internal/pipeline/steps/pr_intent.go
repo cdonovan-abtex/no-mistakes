@@ -4,11 +4,11 @@ import (
 	"github.com/kunchenguid/no-mistakes/internal/pipeline"
 )
 
-// publicPRIntent returns the intent text published on the PR body, or "" when
-// publication is suppressed. It is the single publication gate: every PR-body
-// render path (ordinary drafting, fallback content, and template appendix)
-// goes through it, so caller-side omission and the repository's trusted
-// policy compose here and nowhere else.
+// publicPRIntent gates only the generated Intent section, not other prose or
+// evidence derived from intent. Ordinary drafting, fallback content and template
+// appendices compose caller-side omission with the trusted repository policy
+// here. Pinned-description runs bypass those renderers through
+// preparePRPublication's separate source boundary.
 //
 // The control is tighten-only in both directions:
 //
@@ -37,10 +37,9 @@ func publicPRIntent(sctx *pipeline.StepContext) string {
 	return cleanedUserIntent(sctx)
 }
 
-// runOmitsIntent reports whether this run was started with the caller-side,
-// tighten-only request to keep the generated Intent section out of the PR
-// body. The decision is stamped on the run row at start, so it survives
-// daemon restarts and reruns.
+// runOmitsIntent includes both the caller-side section omission and an
+// independent public-description pin, which may be adopted after launch.
+// Both decisions are durable across recovery and inherited by reruns.
 func runOmitsIntent(sctx *pipeline.StepContext) bool {
 	return sctx != nil && sctx.Run != nil && (sctx.Run.OmitIntent || sctx.Run.PublicDescription != nil)
 }

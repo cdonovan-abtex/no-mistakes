@@ -957,7 +957,9 @@ func attestationPolicyFrom(sctx *pipeline.StepContext) pipelineAttestationPolicy
 // restampPRAttestationWithSteps re-reads the current PR body and rebinds its
 // existing live attestation without sending a title or minting a missing marker.
 // Publication always uses the required run context and current trusted policy.
-// A nil steps keeps existing statuses; a non-nil steps replaces them. Overrides
+// For ordinary runs, nil steps keeps existing statuses and non-nil steps
+// replaces them. Pinned descriptions rebuild their machine record through
+// preparePRPublication, without composing the discarded live narrative. Overrides
 // come from current policy, never the old attestation. Hosts without content
 // readers still skip with a warning. See attestHeadBeforePush for step selection.
 func restampPRAttestationWithSteps(sctx *pipeline.StepContext, host scm.Host, pr *scm.PR, newHeadSHA string, steps []*db.StepResult) error {

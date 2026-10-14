@@ -1,5 +1,6 @@
 // Package publicdescription pins independently authored public PR material from
-// a committed file. It never derives public prose from validation inputs.
+// a committed file or a one-time capture. It never derives public prose from
+// validation inputs.
 package publicdescription
 
 import (
